@@ -1,26 +1,47 @@
 "use client";
 
 import { useState } from "react";
-import { useStore } from "@/lib/store";
 import { Recipe } from "@/lib/recipes";
 import { GhostButton } from "./Buttons";
 
 type Msg = { isUser: boolean; text: string };
 
+async function askChef(recipe: Recipe, question: string): Promise<string> {
+  try {
+    const res = await fetch("/api/ask-chef", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: recipe.title,
+        steps: recipe.steps,
+        buyItems: recipe.buyItems,
+        haveItems: recipe.haveItems,
+        question,
+      }),
+    });
+    if (!res.ok) throw new Error("bad response");
+    const data = await res.json();
+    return data.answer ?? "לא הצלחתי למצוא תשובה טובה לזה כרגע — אפשר לנסח אחרת?";
+  } catch {
+    return "הייתה בעיה בחיבור לשף כרגע — נסי שוב עוד רגע.";
+  }
+}
+
 export function AskChefBubble({ recipe }: { recipe: Recipe }) {
   const [open, setOpen] = useState(false);
-  const { findSubstitution } = useStore();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
+  const [thinking, setThinking] = useState(false);
 
-  function send() {
+  async function send() {
     const text = draft.trim();
     if (!text) return;
     setMessages((m) => [...m, { isUser: true, text }]);
     setDraft("");
-    setTimeout(() => {
-      setMessages((m) => [...m, { isUser: false, text: findSubstitution(text) }]);
-    }, 500);
+    setThinking(true);
+    const answer = await askChef(recipe, text);
+    setThinking(false);
+    setMessages((m) => [...m, { isUser: false, text: answer }]);
   }
 
   return (
@@ -67,12 +88,14 @@ export function AskChefBubble({ recipe }: { recipe: Recipe }) {
                   </Bubble>
                 ))
               )}
+              {thinking && <Bubble isUser={false}>חושבת על זה…</Bubble>}
             </div>
 
             <div className="flex gap-2.5 pt-3">
               <button
                 onClick={send}
-                className="flex-none rounded-2xl px-4 py-3 font-bold"
+                disabled={thinking}
+                className="flex-none rounded-2xl px-4 py-3 font-bold disabled:opacity-50"
                 style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
               >
                 שליחה

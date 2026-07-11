@@ -40,12 +40,20 @@ function CookBody({ recipe }: { recipe: Recipe }) {
   const step = recipe.steps[stepIndex];
   const isLast = stepIndex === recipe.steps.length - 1;
 
+  // Navigates to an explicit destination rather than router.back() — on mobile, especially
+  // in a PWA, the in-app history can get lost (e.g. after the app was backgrounded), which
+  // made "back" exit the whole flow instead of landing on the previous step/groceries page.
+  function goBack() {
+    if (stepIndex > 0) router.push(`/recipe/${recipe.id}/cook?step=${stepIndex - 1}`);
+    else router.push(`/recipe/${recipe.id}`);
+  }
+
   return (
     <Screen>
       <div className="flex items-center justify-between pb-2" dir="ltr">
         <div className="flex items-center gap-2.5">
           <button
-            onClick={() => router.back()}
+            onClick={goBack}
             aria-label="חזרה"
             className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2"
           >

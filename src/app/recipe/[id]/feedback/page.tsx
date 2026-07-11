@@ -18,12 +18,14 @@ export default function FeedbackPage() {
 
 function FeedbackBody({ recipe }: { recipe: Recipe }) {
   const router = useRouter();
-  const { isSaved, submitFeedback } = useStore();
+  const { isSaved, submitFeedback, pendingUpgrade, confirmPendingUpgrade } = useStore();
   const alreadySaved = isSaved(recipe.id);
+  const upgrade = pendingUpgrade?.recipeId === recipe.id ? pendingUpgrade : null;
 
   const [rating, setRating] = useState(0);
   const [notes, setNotes] = useState("");
   const [saveToggle, setSaveToggle] = useState(true);
+  const [keepUpgradeToggle, setKeepUpgradeToggle] = useState(true);
 
   return (
     <Screen>
@@ -74,9 +76,27 @@ function FeedbackBody({ recipe }: { recipe: Recipe }) {
         </div>
       )}
 
+      {upgrade && (
+        <div className="mb-4 flex items-center justify-between rounded-2xl border border-border bg-surface p-3.5">
+          <span className="text-sm font-bold">לשמור את השדרוג: &quot;{upgrade.idea}&quot;?</span>
+          <button
+            onClick={() => setKeepUpgradeToggle((v) => !v)}
+            aria-label="לשמור את השדרוג"
+            className="relative h-[22px] w-10 flex-none rounded-full transition"
+            style={{ background: keepUpgradeToggle ? "var(--herb)" : "var(--surface-3)" }}
+          >
+            <span
+              className="absolute top-0.5 h-[18px] w-[18px] rounded-full bg-surface transition-all"
+              style={{ left: keepUpgradeToggle ? "2px" : "20px" }}
+            />
+          </button>
+        </div>
+      )}
+
       <PrimaryButton
-        onClick={() => {
-          submitFeedback(recipe, notes, saveToggle);
+        onClick={async () => {
+          const finalRecipe = upgrade ? ((await confirmPendingUpgrade(keepUpgradeToggle)) ?? recipe) : recipe;
+          await submitFeedback(finalRecipe, notes, saveToggle);
           router.push("/");
         }}
       >

@@ -4,6 +4,19 @@ export type RecipeStep = {
   parallelTip?: string;
 };
 
+export type Ingredient = {
+  name: string;
+  /** e.g. "2 יחידות", "500 גרם" — free-text so it reads naturally in Hebrew. */
+  quantity?: string;
+};
+
+/** A suggested quantity tweak for one ingredient, derived from a past cooking note —
+ * shown next to the ingredient rather than silently changing its quantity. */
+export type IngredientNote = {
+  name: string;
+  suggestion: string;
+};
+
 export type Recipe = {
   id: string;
   title: string;
@@ -12,10 +25,11 @@ export type Recipe = {
   blurb: string;
   source: string;
   keywords: string[];
-  haveItems: string[];
-  buyItems: string[];
+  haveItems: Ingredient[];
+  buyItems: Ingredient[];
   steps: RecipeStep[];
   note?: string;
+  ingredientNotes?: IngredientNote[];
   /** True for a "save for later" bookmark that hasn't been cooked-and-confirmed yet.
    * Shows up in the cookbook so it can be found and opened, but if the first time it's
    * actually cooked ends without confirming at Feedback, it's removed rather than kept. */
@@ -43,8 +57,17 @@ export const seedRecipes: Recipe[] = [
     blurb: "בצל מקורמל מתוק, בשר עסיסי — קלאסיקה אמריקאית לערב עצלן.",
     source: "מהצ׳אט",
     keywords: ["ערב", "מהיר", "נוחות", "בשר", "המבורגר", "גריל", "ארוחת"],
-    haveItems: ["מלח ופלפל", "חמאה", "שמן בישול"],
-    buyItems: ["בשר טחון", "בצל", "לחמניות המבורגר", "גבינה צהובה"],
+    haveItems: [
+      { name: "מלח ופלפל" },
+      { name: "חמאה", quantity: "2 כפות" },
+      { name: "שמן בישול", quantity: "לטיגון" },
+    ],
+    buyItems: [
+      { name: "בשר טחון", quantity: "500 גרם" },
+      { name: "בצל", quantity: "2 יחידות" },
+      { name: "לחמניות המבורגר", quantity: "4 יחידות" },
+      { name: "גבינה צהובה", quantity: "4 פרוסות" },
+    ],
     steps: [
       { text: "לפרוס שני בצלים לחצאי ירח דקים." },
       {
@@ -69,8 +92,13 @@ export const seedRecipes: Recipe[] = [
     blurb: "עגבניות, בזיליקום ושום — נוחות איטלקית בקערה אחת.",
     source: "מהצ׳אט",
     keywords: ["ערב", "מהיר", "איטלקי", "נוחות", "פסטה", "קציצות"],
-    haveItems: ["מלח ופלפל", "שמן זית", "שום"],
-    buyItems: ["בשר טחון", "פירורי לחם", "ביצה", "רוטב מרינרה"],
+    haveItems: [{ name: "מלח ופלפל" }, { name: "שמן זית", quantity: "2 כפות" }, { name: "שום", quantity: "2 שיניים" }],
+    buyItems: [
+      { name: "בשר טחון", quantity: "500 גרם" },
+      { name: "פירורי לחם", quantity: "חצי כוס" },
+      { name: "ביצה", quantity: "1 יחידה" },
+      { name: "רוטב מרינרה", quantity: "500 מ״ל" },
+    ],
     steps: [
       { text: "לערבב בשר, פירורי לחם, ביצה ותיבול. לגלגל לכדורים." },
       {
@@ -92,8 +120,13 @@ export const seedRecipes: Recipe[] = [
     blurb: "שוקולד חם ונמס, מוכן לפני שהתחשק לך להתחרט.",
     source: "מהצ׳אט",
     keywords: ["מתוק", "קינוח", "נוחות", "פרידה", "מהיר", "שוקולד", "עצוב"],
-    haveItems: ["סוכר", "חמאה", "אבקת קקאו", "קמח"],
-    buyItems: ["שבבי שוקולד"],
+    haveItems: [
+      { name: "סוכר", quantity: "4 כפות" },
+      { name: "חמאה", quantity: "2 כפות" },
+      { name: "אבקת קקאו", quantity: "2 כפות" },
+      { name: "קמח", quantity: "4 כפות" },
+    ],
+    buyItems: [{ name: "שבבי שוקולד", quantity: "חופן" }],
     steps: [
       { text: "לערבב קמח, סוכר, קקאו, חמאה מומסת וקצת חלב בספל." },
       { text: "להוסיף חופן שבבי שוקולד ולערבב פעם אחת." },
@@ -111,8 +144,13 @@ export const seedRecipes: Recipe[] = [
     blurb: "פטה נמסה, עגבניות שרי מתוקות — הטרנד שכבש את כולם.",
     source: "יובא מטיקטוק",
     keywords: ["ארוחה", "חגיגה", "מרשים", "פסטה", "צמחוני", "מיובא", "וידאו", "אפוי"],
-    haveItems: ["שמן זית", "מלח ופלפל"],
-    buyItems: ["גוש פטה", "עגבניות שרי", "פסטה", "שום"],
+    haveItems: [{ name: "שמן זית", quantity: "3 כפות" }, { name: "מלח ופלפל" }],
+    buyItems: [
+      { name: "גוש פטה", quantity: "200 גרם" },
+      { name: "עגבניות שרי", quantity: "250 גרם" },
+      { name: "פסטה", quantity: "300 גרם" },
+      { name: "שום", quantity: "3 שיניים" },
+    ],
     steps: [
       { text: "להניח את הפטה בתבנית אפייה, להקיף בעגבניות שרי, לזלף שמן זית." },
       {
@@ -138,8 +176,13 @@ export const chatSuggestionPool: Recipe[] = [
     blurb: "חמאה, שום קלוי, נגיעה ימית — מרגיש כמו מסעדה, לוקח 20 דקות.",
     source: "מהצ׳אט",
     keywords: ["ערב", "מהיר", "ים", "פסטה", "מרשים"],
-    haveItems: ["שמן זית", "מלח ופלפל", "חמאה"],
-    buyItems: ["שרימפס", "פסטה", "שום", "פטרוזיליה"],
+    haveItems: [{ name: "שמן זית", quantity: "1 כף" }, { name: "מלח ופלפל" }, { name: "חמאה", quantity: "3 כפות" }],
+    buyItems: [
+      { name: "שרימפס", quantity: "300 גרם" },
+      { name: "פסטה", quantity: "250 גרם" },
+      { name: "שום", quantity: "3 שיניים" },
+      { name: "פטרוזיליה", quantity: "חופן" },
+    ],
     steps: [
       {
         text: "להרתיח מים ולבשל את הפסטה.",
@@ -161,8 +204,13 @@ export const chatSuggestionPool: Recipe[] = [
     blurb: "כמון, גזר ועדשים מתובלות — נחמה חמה ליום קר.",
     source: "מהצ׳אט",
     keywords: ["חורף", "נוחות", "מהיר", "צמחוני", "מרק", "בריא"],
-    haveItems: ["שמן זית", "מלח ופלפל", "כמון"],
-    buyItems: ["עדשים כתומות", "גזר", "בצל", "ציר ירקות"],
+    haveItems: [{ name: "שמן זית", quantity: "2 כפות" }, { name: "מלח ופלפל" }, { name: "כמון", quantity: "1 כפית" }],
+    buyItems: [
+      { name: "עדשים כתומות", quantity: "כוס" },
+      { name: "גזר", quantity: "2 יחידות" },
+      { name: "בצל", quantity: "1 יחידה" },
+      { name: "ציר ירקות", quantity: "1 ליטר" },
+    ],
     steps: [
       { text: "לטגן בצל וגזר קצוץ בשמן זית עד שמתרככים." },
       {
@@ -180,8 +228,13 @@ export const chatSuggestionPool: Recipe[] = [
     blurb: "טונה, זיתים, עגבניות — קליל, רענן, בלי לבשל כמעט כלום.",
     source: "מהצ׳אט",
     keywords: ["קליל", "צהריים", "מהיר", "בריא", "קיץ"],
-    haveItems: ["שמן זית", "מלח", "לימון"],
-    buyItems: ["קופסת טונה", "עגבניות שרי", "זיתים", "בצל סגול"],
+    haveItems: [{ name: "שמן זית", quantity: "1 כף" }, { name: "מלח" }, { name: "לימון", quantity: "חצי יחידה" }],
+    buyItems: [
+      { name: "קופסת טונה", quantity: "1 קופסה" },
+      { name: "עגבניות שרי", quantity: "150 גרם" },
+      { name: "זיתים", quantity: "חופן" },
+      { name: "בצל סגול", quantity: "חצי יחידה" },
+    ],
     steps: [
       { text: "לחתוך עגבניות שרי לחצאים ולפרוס בצל סגול דק." },
       { text: "לערבב עם הטונה, הזיתים, שמן זית ומיץ לימון." },
@@ -192,3 +245,4 @@ export const chatSuggestionPool: Recipe[] = [
 export function findRecipeInList(recipes: Recipe[], id: string): Recipe | undefined {
   return recipes.find((r) => r.id === id);
 }
+

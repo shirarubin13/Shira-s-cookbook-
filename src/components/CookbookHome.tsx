@@ -14,7 +14,7 @@ import { ShareSheet } from "./ShareSheet";
 const suggestions = ["ארוחת ערב ב-10 דקות", "משהו מתוק, יום קשה", "ארוחה גדולה", "קציצות"];
 
 export function CookbookHome() {
-  const { userName, userEmail, recipes, deleteRecipe, signOut } = useStore();
+  const { userName, userEmail, recipes, recipesLoading, deleteRecipe, signOut } = useStore();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [showImport, setShowImport] = useState(false);
@@ -94,7 +94,9 @@ export function CookbookHome() {
             ))}
           </div>
 
-          {filtered.length === 0 ? (
+          {recipesLoading ? (
+            <p className="text-sm font-bold text-muted">טוענת את הספר שלך…</p>
+          ) : filtered.length === 0 ? (
             <p className="text-sm font-bold text-muted">שום דבר לא מתאים כרגע — נסי את הצ׳אט במקום.</p>
           ) : (
             <div className="flex flex-col gap-2.5">
@@ -122,8 +124,8 @@ function Actions({ onImport }: { onImport: () => void }) {
   return (
     <div className="flex w-full flex-col gap-2.5">
       <PrimaryButton onClick={() => router.push("/chat")}>להתייעץ עם הצ׳אט על מתכון חדש</PrimaryButton>
-      <GhostButton onClick={onImport}>ייבוא קישור לסרטון</GhostButton>
-      <GhostButton onClick={() => router.push("/browse")}>לצפייה בספרים משותפים</GhostButton>
+      <GhostButton onClick={onImport}>ייבוא מתכון מטקסט</GhostButton>
+      <GhostButton onClick={() => router.push("/browse")}>לצפייה בספרים של חברים</GhostButton>
     </div>
   );
 }

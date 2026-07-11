@@ -12,20 +12,37 @@ type ChatEntry =
   | { kind: "bot"; text: string }
   | { kind: "suggestions"; recipes: Recipe[] };
 
-function pickSuggestions(query: string): Recipe[] {
+function fallbackSuggestions(query: string): Recipe[] {
   const matches = chatSuggestionPool.filter((r) => matchesQuery(r, query));
-  if (matches.length === 0) return chatSuggestionPool.slice(0, 2);
-  return matches.slice(0, 3);
+  return (matches.length ? matches : chatSuggestionPool.slice(0, 2)).map((r) => ({ ...r }));
+}
+
+async function askAi(message: string): Promise<Recipe[] | null> {
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = data.suggestions as Array<Omit<Recipe, "id" | "source">> | undefined;
+    if (!raw || !raw.length) return null;
+    return raw.map((r) => ({ ...r, id: crypto.randomUUID(), source: "מהצ'אט" }));
+  } catch {
+    return null;
+  }
 }
 
 export default function ChatPage() {
   const router = useRouter();
-  const { saveRecipe, showToast } = useStore();
+  const { saveRecipe, showToast, cacheAiSuggestions } = useStore();
   const [entries, setEntries] = useState<ChatEntry[]>([
     { kind: "bot", text: "ספרי לי מה בא לך, מה יש לך בבית, או כמה זמן יש לך." },
   ]);
   const [draft, setDraft] = useState("");
   const [saved, setSaved] = useState<Set<string>>(new Set());
+  const [thinking, setThinking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   function scrollDown() {
@@ -34,29 +51,36 @@ export default function ChatPage() {
     });
   }
 
-  function send() {
+  async function send() {
     const text = draft.trim();
     if (!text) return;
     setEntries((e) => [...e, { kind: "user", text }]);
     setDraft("");
+    setThinking(true);
     scrollDown();
-    setTimeout(() => {
-      const suggestions = pickSuggestions(text);
-      const intro =
-        suggestions.length > 1
-          ? "כמה אפשרויות שיכולות להתאים:"
-          : `מצאתי מתכון שמתאים: ${suggestions[0].title}, בערך ${Math.round(
-              suggestions[0].steps.reduce((sum, s) => sum + (s.timerSeconds ?? 90), 0) / 60
-            )} דקות.`;
-      setEntries((e) => [...e, { kind: "bot", text: intro }, { kind: "suggestions", recipes: suggestions }]);
-      scrollDown();
-    }, 500);
+
+    const suggestions = (await askAi(text)) ?? fallbackSuggestions(text);
+    cacheAiSuggestions(suggestions);
+    setThinking(false);
+
+    const intro =
+      suggestions.length > 1
+        ? "כמה אפשרויות שיכולות להתאים:"
+        : `מצאתי מתכון שמתאים: ${suggestions[0].title}.`;
+    setEntries((e) => [...e, { kind: "bot", text: intro }, { kind: "suggestions", recipes: suggestions }]);
+    scrollDown();
   }
 
-  function saveForLater(recipe: Recipe) {
-    saveRecipe(recipe, true);
+  async function saveForLater(recipe: Recipe) {
     setSaved((s) => new Set(s).add(recipe.id));
-    showToast("נשמר לספר שלך לצפייה — ההחלטה הסופית תהיה בסוף הבישול הראשון.");
+    const result = await saveRecipe(recipe, true);
+    if (result) showToast("נשמר לספר שלך לצפייה — ההחלטה הסופית תהיה בסוף הבישול הראשון.");
+    else
+      setSaved((s) => {
+        const next = new Set(s);
+        next.delete(recipe.id);
+        return next;
+      });
   }
 
   function startNow(recipe: Recipe) {
@@ -68,7 +92,7 @@ export default function ChatPage() {
   return (
     <Screen>
       <Header title="מתכון חדש" />
-      <h1 className="pb-3 pt-1 text-lg font-bold">על מה מתחשק לך לבשל?</h1>
+      <h1 className="pb-3 pt-1 text-lg font-bold">מה בא לך לאכול?</h1>
 
       <div ref={scrollRef} className="flex max-h-[55vh] flex-col gap-2.5 overflow-y-auto pb-3">
         {entries.map((entry, i) => {
@@ -121,12 +145,21 @@ export default function ChatPage() {
             </div>
           );
         })}
+        {thinking && (
+          <div
+            className="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm font-bold text-muted"
+            style={{ alignSelf: "flex-start", background: "var(--surface-2)" }}
+          >
+            חושבת על זה…
+          </div>
+        )}
       </div>
 
       <div className="flex gap-2.5 pt-2">
         <button
           onClick={send}
-          className="flex-none rounded-2xl px-4 py-3.5 font-bold"
+          disabled={thinking}
+          className="flex-none rounded-2xl px-4 py-3.5 font-bold disabled:opacity-50"
           style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
         >
           שליחה

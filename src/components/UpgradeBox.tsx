@@ -2,19 +2,52 @@
 
 import { useState } from "react";
 import { useStore } from "@/lib/store";
+import { Recipe } from "@/lib/recipes";
 
-export function UpgradeBox({ recipeId }: { recipeId: string }) {
+async function askForUpgrades(recipe: Recipe, request: string): Promise<string[] | null> {
+  try {
+    const res = await fetch("/api/upgrade", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: recipe.title, blurb: recipe.blurb, request }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const ideas = data.ideas as string[] | undefined;
+    return ideas && ideas.length ? ideas : null;
+  } catch {
+    return null;
+  }
+}
+
+export function UpgradeBox({ recipe }: { recipe: Recipe }) {
   const { applyUpgrade, nextUpgradeIdeas } = useStore();
   const [draft, setDraft] = useState("");
+  const [lastRequest, setLastRequest] = useState("");
   const [intro, setIntro] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  function send() {
+  async function send() {
     const text = draft.trim();
     if (!text) return;
-    setIdeas(nextUpgradeIdeas());
-    setIntro(`כמה רעיונות שיכולים להתאים ל"${text}":`);
     setDraft("");
+    setLastRequest(text);
+    setLoading(true);
+    setIntro(`חושבת על רעיונות ל"${text}"…`);
+    const found = await askForUpgrades(recipe, text);
+    setIdeas(found ?? nextUpgradeIdeas());
+    setIntro(`כמה רעיונות שיכולים להתאים ל"${text}":`);
+    setLoading(false);
+  }
+
+  async function more() {
+    if (!lastRequest || loading) return;
+    setLoading(true);
+    const found = await askForUpgrades(recipe, lastRequest);
+    setIdeas(found ?? nextUpgradeIdeas());
+    setIntro("בטח, עוד כמה אפשרויות:");
+    setLoading(false);
   }
 
   return (
@@ -24,7 +57,8 @@ export function UpgradeBox({ recipeId }: { recipeId: string }) {
       <div className="flex gap-2.5">
         <button
           onClick={send}
-          className="flex-none rounded-xl px-3.5 py-2 text-xs font-bold"
+          disabled={loading}
+          className="flex-none rounded-xl px-3.5 py-2 text-xs font-bold disabled:opacity-60"
           style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
         >
           שליחה
@@ -41,26 +75,21 @@ export function UpgradeBox({ recipeId }: { recipeId: string }) {
       {intro && (
         <>
           <div className="rounded-xl bg-surface-2 p-2.5 text-right text-xs font-bold">{intro}</div>
-          {ideas.map((idea) => (
-            <button
-              key={idea}
-              onClick={() => {
-                applyUpgrade(recipeId, idea);
-              }}
-              className="w-full rounded-xl bg-surface-2 px-3 py-2.5 text-right text-xs font-bold"
-            >
-              {idea}
+          {!loading &&
+            ideas.map((idea) => (
+              <button
+                key={idea}
+                onClick={() => applyUpgrade(recipe.id, idea)}
+                className="w-full rounded-xl bg-surface-2 px-3 py-2.5 text-right text-xs font-bold"
+              >
+                {idea}
+              </button>
+            ))}
+          {!loading && (
+            <button onClick={more} className="self-end text-xs font-bold text-muted">
+              רוצה רעיונות אחרים?
             </button>
-          ))}
-          <button
-            onClick={() => {
-              setIdeas(nextUpgradeIdeas());
-              setIntro("בטח, עוד כמה אפשרויות:");
-            }}
-            className="self-end text-xs font-bold text-muted"
-          >
-            רוצה רעיונות אחרים?
-          </button>
+          )}
         </>
       )}
     </div>

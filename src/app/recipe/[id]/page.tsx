@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { Recipe } from "@/lib/recipes";
+import { Ingredient, IngredientNote, Recipe } from "@/lib/recipes";
 import { Screen } from "@/components/Screen";
 import { Header } from "@/components/Header";
 import { ProgressGauge } from "@/components/ProgressGauge";
@@ -28,6 +28,11 @@ export default function IngredientsPage() {
   return <IngredientsBody key={id} recipe={recipe} />;
 }
 
+function findNote(item: Ingredient, notes: IngredientNote[] | undefined): IngredientNote | undefined {
+  if (!notes) return undefined;
+  return notes.find((n) => n.name === item.name || item.name.includes(n.name) || n.name.includes(item.name));
+}
+
 function IngredientsBody({ recipe }: { recipe: Recipe }) {
   const router = useRouter();
   const [checks, setChecks] = useState<Record<string, boolean>>({});
@@ -38,7 +43,7 @@ function IngredientsBody({ recipe }: { recipe: Recipe }) {
 
   return (
     <Screen>
-      <Header title={recipe.title} />
+      <Header title={recipe.title} onBack={() => router.push("/")} />
 
       <div className="flex flex-col gap-1.5 pb-4 pt-1">
         <ProgressGauge current={1} total={recipe.steps.length + 1} />
@@ -49,11 +54,10 @@ function IngredientsBody({ recipe }: { recipe: Recipe }) {
       {recipe.note && (
         <div className="mb-4 rounded-2xl p-3.5" style={{ background: "var(--accent-soft)" }}>
           <div className="pb-1 text-xs font-bold" style={{ color: "var(--accent-deep)" }}>
-            עודכן לפי המשוב שלך
+            הערה מהפעם הקודמת
           </div>
           <p className="text-sm font-bold">
-            בפעם שעברה כתבת &quot;{recipe.note}&quot; — השף כבר התאים את המתכון בהתאם, בלי שצריך לעשות
-            כלום.
+            בפעם שעברה כתבת &quot;{recipe.note}&quot; — אפשר לשדרג את המתכון בהתאם, או לשאול את השף.
           </p>
         </div>
       )}
@@ -61,6 +65,7 @@ function IngredientsBody({ recipe }: { recipe: Recipe }) {
       <Group
         title="כנראה יש לך בבית"
         items={recipe.haveItems}
+        notes={recipe.ingredientNotes}
         prefix="h"
         defaultOn={true}
         isChecked={isChecked}
@@ -69,6 +74,7 @@ function IngredientsBody({ recipe }: { recipe: Recipe }) {
       <Group
         title="להוסיף לרשימה"
         items={recipe.buyItems}
+        notes={recipe.ingredientNotes}
         prefix="b"
         defaultOn={false}
         isChecked={isChecked}
@@ -76,7 +82,7 @@ function IngredientsBody({ recipe }: { recipe: Recipe }) {
       />
 
       <div className="py-4">
-        <UpgradeBox recipeId={recipe.id} />
+        <UpgradeBox recipe={recipe} />
       </div>
 
       <PrimaryButton onClick={() => router.push(`/recipe/${recipe.id}/cook`)}>
@@ -91,13 +97,15 @@ function IngredientsBody({ recipe }: { recipe: Recipe }) {
 function Group({
   title,
   items,
+  notes,
   prefix,
   defaultOn,
   isChecked,
   onToggle,
 }: {
   title: string;
-  items: string[];
+  items: Ingredient[];
+  notes: IngredientNote[] | undefined;
   prefix: string;
   defaultOn: boolean;
   isChecked: (key: string, fallback: boolean) => boolean;
@@ -109,14 +117,15 @@ function Group({
       {items.map((item, i) => {
         const key = `${prefix}${i}`;
         const checked = isChecked(key, defaultOn);
+        const note = findNote(item, notes);
         return (
           <button
             key={key}
             onClick={() => onToggle(key, !checked)}
-            className="flex w-full items-center gap-2.5 border-b border-border py-2 text-right last:border-0"
+            className="flex w-full items-start gap-2.5 border-b border-border py-2 text-right last:border-0"
           >
             <span
-              className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded-md border"
+              className="mt-0.5 flex h-[18px] w-[18px] flex-none items-center justify-center rounded-md border"
               style={{
                 background: checked ? "var(--herb)" : "transparent",
                 borderColor: checked ? "var(--herb)" : "var(--muted)",
@@ -128,7 +137,17 @@ function Group({
                 </svg>
               )}
             </span>
-            <span className={`text-sm font-bold ${checked ? "text-muted line-through" : ""}`}>{item}</span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="flex items-baseline justify-between gap-2">
+                <span className={`text-sm font-bold ${checked ? "text-muted line-through" : ""}`}>{item.name}</span>
+                {item.quantity && <span className="text-xs font-bold text-muted">{item.quantity}</span>}
+              </span>
+              {note && (
+                <span className="pt-0.5 text-xs font-bold" style={{ color: "var(--accent-deep)" }}>
+                  הערה: {note.suggestion}
+                </span>
+              )}
+            </span>
           </button>
         );
       })}
