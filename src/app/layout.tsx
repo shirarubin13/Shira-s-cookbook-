@@ -4,7 +4,7 @@ import { StoreProvider } from "@/lib/store";
 
 export const metadata: Metadata = {
   title: "ספר המתכונים של שירה",
-  description: "ספר מתכונים אישי שנבנה בצ׳אט, עם הדרכת בישול צעד-אחר-צעד.",
+  description: "Your own AI cookbook.",
 };
 
 export const viewport: Viewport = {
