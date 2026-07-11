@@ -17,6 +17,13 @@ export function WelcomeScreen() {
   );
 }
 
+function friendlyAuthError(raw: string): string {
+  if (/rate limit/i.test(raw)) {
+    return "נשלחו יותר מדי קישורים בזמן קצר — אפשר לנסות שוב בעוד כמה דקות.";
+  }
+  return "לא הצלחנו לשלוח את הקישור — אפשר לנסות שוב בעוד רגע.";
+}
+
 function LoginScreen() {
   const { signInWithEmail } = useStore();
   const searchParams = useSearchParams();
@@ -34,7 +41,7 @@ function LoginScreen() {
     setError(null);
     const { error } = await signInWithEmail(trimmed);
     setLoading(false);
-    if (error) setError(error);
+    if (error) setError(friendlyAuthError(error));
     else setSent(true);
   }
 
