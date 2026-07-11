@@ -3,7 +3,7 @@ import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 
 export const metadata: Metadata = {
-  title: "ספר המתכונים של שירה",
+  title: "My cookbook",
   description: "Your own AI cookbook.",
 };
 
