@@ -127,7 +127,6 @@ Rules:
     return NextResponse.json({ suggestions: parsed.suggestions ?? [] });
   } catch (err) {
     console.error("Gemini chat error:", err);
-    const detail = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: "AI request failed.", detail }, { status: 502 });
+    return NextResponse.json({ error: "AI request failed." }, { status: 502 });
   }
 }
