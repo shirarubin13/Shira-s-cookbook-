@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI, Type } from "@google/genai";
 
+// Vercel's default function timeout (10s) can be shorter than a structured Gemini
+// generation takes, especially on a cold start — extend it to the Hobby-tier max.
+export const maxDuration = 60;
+
 const recipeSchema = {
   type: Type.OBJECT,
   properties: {

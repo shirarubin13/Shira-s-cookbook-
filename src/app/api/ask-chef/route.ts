@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import type { Ingredient, RecipeStep } from "@/lib/recipes";
 
+// Vercel's default function timeout (10s) can be shorter than a Gemini generation
+// takes, especially on a cold start — extend it to the Hobby-tier max.
+export const maxDuration = 60;
+
 function ingredientsText(items: Ingredient[] | undefined): string {
   if (!Array.isArray(items) || !items.length) return "";
   return items.map((i) => (i.quantity ? `${i.name} (${i.quantity})` : i.name)).join(", ");
