@@ -1,26 +1,133 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Rubik";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/rubik-bold.woff2") format("woff2");
+  unicode-range: U+0590-05FF, U+FB1D-FB4F, U+200C-2010;
+}
+@font-face {
+  font-family: "Rubik";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/rubik-bold-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+2000-206F, U+20AC;
+}
+@font-face {
+  font-family: "Suez One";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/suez-one.woff2") format("woff2");
+  unicode-range: U+0590-05FF, U+FB1D-FB4F, U+200C-2010;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f2f2f0;
+  --surface-3: #e7e6e2;
+  --ink: #1a1a18;
+  --muted: #7a7873;
+  --border: #e7e6e2;
+  --herb: #34c759;
+  --herb-soft: #dff5e3;
+
+  --accent: #c7e8f8;
+  --accent-ink: #0c4a63;
+  --accent-soft: #e7f6fc;
+  --accent-deep: #3f93b8;
+
+  --font-body: "Rubik", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-title: "Suez One", "Rubik", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+[data-palette="pink"] {
+  --accent: #fad9e6;
+  --accent-ink: #7c2643;
+  --accent-soft: #fdeef3;
+  --accent-deep: #c9577e;
+}
+[data-palette="blue"] {
+  --accent: #c7e8f8;
+  --accent-ink: #0c4a63;
+  --accent-soft: #e7f6fc;
+  --accent-deep: #3f93b8;
+}
+[data-palette="green"] {
+  --accent: #d3f0d6;
+  --accent-ink: #235c2c;
+  --accent-soft: #ebf9ec;
+  --accent-deep: #4c9457;
+}
+[data-palette="yellow"] {
+  --accent: #fbeba6;
+  --accent-ink: #6b5a0a;
+  --accent-soft: #fdf6dc;
+  --accent-deep: #a98a17;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-herb: var(--herb);
+  --color-herb-soft: var(--herb-soft);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-deep: var(--accent-deep);
+  --font-sans: var(--font-body);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  direction: rtl;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-weight: 700;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes sheetUp {
+  from {
+    transform: translateY(28px);
+    opacity: 0.3;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes toastIn {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }

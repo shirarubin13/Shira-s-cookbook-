@@ -1,0 +1,144 @@
+"use client";
+
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useStore } from "@/lib/store";
+import { Recipe, chatSuggestionPool, matchesQuery } from "@/lib/recipes";
+import { Screen } from "@/components/Screen";
+import { Header } from "@/components/Header";
+
+type ChatEntry =
+  | { kind: "user"; text: string }
+  | { kind: "bot"; text: string }
+  | { kind: "suggestions"; recipes: Recipe[] };
+
+function pickSuggestions(query: string): Recipe[] {
+  const matches = chatSuggestionPool.filter((r) => matchesQuery(r, query));
+  if (matches.length === 0) return chatSuggestionPool.slice(0, 2);
+  return matches.slice(0, 3);
+}
+
+export default function ChatPage() {
+  const router = useRouter();
+  const { saveRecipe, showToast } = useStore();
+  const [entries, setEntries] = useState<ChatEntry[]>([
+    { kind: "bot", text: "ספרי לי מה בא לך, מה יש לך בבית, או כמה זמן יש לך." },
+  ]);
+  const [draft, setDraft] = useState("");
+  const [saved, setSaved] = useState<Set<string>>(new Set());
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  function scrollDown() {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    });
+  }
+
+  function send() {
+    const text = draft.trim();
+    if (!text) return;
+    setEntries((e) => [...e, { kind: "user", text }]);
+    setDraft("");
+    scrollDown();
+    setTimeout(() => {
+      const suggestions = pickSuggestions(text);
+      const intro =
+        suggestions.length > 1
+          ? "כמה אפשרויות שיכולות להתאים:"
+          : `מצאתי מתכון שמתאים: ${suggestions[0].title}, בערך ${Math.round(
+              suggestions[0].steps.reduce((sum, s) => sum + (s.timerSeconds ?? 90), 0) / 60
+            )} דקות.`;
+      setEntries((e) => [...e, { kind: "bot", text: intro }, { kind: "suggestions", recipes: suggestions }]);
+      scrollDown();
+    }, 500);
+  }
+
+  function saveForLater(recipe: Recipe) {
+    saveRecipe(recipe, true);
+    setSaved((s) => new Set(s).add(recipe.id));
+    showToast("נשמר לספר שלך לצפייה — ההחלטה הסופית תהיה בסוף הבישול הראשון.");
+  }
+
+  function startNow(recipe: Recipe) {
+    // Deliberately not saved yet — cooking it is a trial. Feedback asks to save it
+    // permanently at the end, once the person actually knows whether they liked it.
+    router.push(`/recipe/${recipe.id}`);
+  }
+
+  return (
+    <Screen>
+      <Header title="מתכון חדש" />
+      <h1 className="pb-3 pt-1 text-lg font-bold">על מה מתחשק לך לבשל?</h1>
+
+      <div ref={scrollRef} className="flex max-h-[55vh] flex-col gap-2.5 overflow-y-auto pb-3">
+        {entries.map((entry, i) => {
+          if (entry.kind === "suggestions") {
+            return (
+              <div key={i} className="flex flex-col gap-2.5">
+                {entry.recipes.map((r) => (
+                  <div key={r.id} className="rounded-2xl border border-border bg-surface p-3.5">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-surface-2 text-xl">
+                        {r.emoji}
+                      </span>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="font-bold">{r.title}</span>
+                        <span className="text-xs font-bold text-muted">{r.blurb}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-3">
+                      <button
+                        onClick={() => startNow(r)}
+                        className="flex-1 rounded-xl py-2.5 text-xs font-bold"
+                        style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
+                      >
+                        להתחיל לבשל עכשיו
+                      </button>
+                      <button
+                        onClick={() => saveForLater(r)}
+                        disabled={saved.has(r.id)}
+                        className="flex-1 rounded-xl bg-surface-2 py-2.5 text-xs font-bold disabled:opacity-60"
+                      >
+                        {saved.has(r.id) ? "✓ נשמר" : "שמירה, אחליט אחר כך"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          }
+          return (
+            <div
+              key={i}
+              className="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm font-bold"
+              style={{
+                alignSelf: entry.kind === "user" ? "flex-end" : "flex-start",
+                background: entry.kind === "user" ? "var(--accent)" : "var(--surface-2)",
+                color: entry.kind === "user" ? "var(--accent-ink)" : "var(--ink)",
+              }}
+            >
+              {entry.text}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-2.5 pt-2">
+        <button
+          onClick={send}
+          className="flex-none rounded-2xl px-4 py-3.5 font-bold"
+          style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
+        >
+          שליחה
+        </button>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && send()}
+          placeholder="פסטה שרימפס בחמאת שום"
+          className="min-w-0 flex-1 rounded-2xl bg-surface-2 px-3.5 py-3.5 text-right"
+        />
+      </div>
+    </Screen>
+  );
+}
