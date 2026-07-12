@@ -54,6 +54,9 @@ function LoginScreen() {
           <p className="font-bold text-muted">
             פתחי את המייל בכתובת <span dir="ltr" className="inline-block">{email}</span> ולחצי על הקישור כדי להיכנס.
           </p>
+          <p className="text-sm font-bold" style={{ color: "var(--accent-deep)" }}>
+            לא רואה את המייל? כדאי לבדוק בתיקיית הספאם — לפעמים הוא מגיע לשם.
+          </p>
           <p className="text-sm font-bold text-muted">
             טיפ: אם עבר קצת זמן מאז שנשלח, יכול להיות שהוא פג — עדיף ללחוץ עליו תוך כמה דקות מהשליחה.
           </p>
