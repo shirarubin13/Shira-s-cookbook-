@@ -104,7 +104,7 @@ export default function BrowseOwnerPage() {
 
   return (
     <Screen>
-      <Header title={`הספר של ${ownerName}`} onBack={() => router.push("/browse")} />
+      <Header title={`הספר של ${ownerName}`} onBack={() => router.push("/")} />
       <p className="py-3 text-sm font-bold text-muted">
         אפשר לפתוח כל מתכון ולבשל אותו — ובסוף גם לשמור אותו לספר שלך.
       </p>

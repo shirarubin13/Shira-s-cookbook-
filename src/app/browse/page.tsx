@@ -69,7 +69,7 @@ export default function BrowsePage() {
 
   return (
     <Screen>
-      <Header title="ספרים של חברים" />
+      <Header title="ספרים של חברים" onBack={() => router.push("/")} />
       {books === null ? null : books.length === 0 ? (
         <div className="flex flex-col items-center gap-3 pt-16 text-center">
           <span className="text-4xl">📖</span>
