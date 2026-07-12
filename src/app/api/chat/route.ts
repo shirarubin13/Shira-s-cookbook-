@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI, Type } from "@google/genai";
+import { generateWithFallback } from "@/lib/gemini";
 
 // Vercel's default function timeout (10s) can be shorter than a structured Gemini
 // generation takes, especially on a cold start — extend it to the Hobby-tier max.
@@ -112,17 +113,10 @@ Rules:
 - Keep ingredient lists realistic and the recipe achievable at home, with a real quantity for each ingredient sized to this specific recipe (not vague amounts).`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: recipeSchema,
-      },
+    const text = await generateWithFallback(ai, prompt, {
+      responseMimeType: "application/json",
+      responseSchema: recipeSchema,
     });
-
-    const text = response.text;
-    if (!text) throw new Error("Empty response from model");
     const parsed = JSON.parse(text);
     return NextResponse.json({ suggestions: parsed.suggestions ?? [] });
   } catch (err) {

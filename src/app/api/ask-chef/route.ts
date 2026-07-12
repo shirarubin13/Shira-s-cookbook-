@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
+import { generateWithFallback } from "@/lib/gemini";
 import type { Ingredient, RecipeStep } from "@/lib/recipes";
 
 // Vercel's default function timeout (10s) can be shorter than a Gemini generation
@@ -41,13 +42,7 @@ Their question: "${question}"
 Answer briefly and practically in Hebrew (2-4 sentences max), specific to this exact recipe — e.g. if they're asking about a substitution, a missing ingredient, or a step, give a concrete, usable answer rather than a generic one.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-    });
-
-    const text = response.text;
-    if (!text) throw new Error("Empty response from model");
+    const text = await generateWithFallback(ai, prompt);
     return NextResponse.json({ answer: text.trim() });
   } catch (err) {
     console.error("Gemini ask-chef error:", err);

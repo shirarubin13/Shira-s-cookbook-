@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI, Type } from "@google/genai";
+import { generateWithFallback } from "@/lib/gemini";
 import type { Ingredient } from "@/lib/recipes";
 
 // Vercel's default function timeout (10s) can be shorter than a structured Gemini
@@ -62,17 +63,10 @@ The recipe's ingredients and their current quantities: ${ingredientList}
 If the note implies a specific ingredient's quantity should change next time (e.g. "too oniony", "not enough sauce"), identify which ingredient it is and phrase a short, tentative quantity suggestion in Hebrew. Never invent a change the note doesn't support — if the note is about something else (technique, timing, taste in general) rather than a specific ingredient's amount, return an empty list.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: notesSchema,
-      },
+    const text = await generateWithFallback(ai, prompt, {
+      responseMimeType: "application/json",
+      responseSchema: notesSchema,
     });
-
-    const text = response.text;
-    if (!text) throw new Error("Empty response from model");
     const parsed = JSON.parse(text);
     return NextResponse.json({ notes: parsed.notes ?? [] });
   } catch (err) {

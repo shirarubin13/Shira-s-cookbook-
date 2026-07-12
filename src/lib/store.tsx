@@ -17,14 +17,12 @@ import {
   Recipe,
   RecipeStep,
   chatSuggestionPool,
-  seedRecipes,
 } from "./recipes";
 import { PaletteKey } from "./palette";
 import { Toast } from "@/components/Toast";
 import {
   fetchRecipes,
   insertRecipe,
-  insertRecipes,
   updateRecipe,
   deleteRecipeRow,
 } from "./supabaseRecipes";
@@ -185,10 +183,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setUserName(name);
       setPaletteState(chosenPalette);
 
-      // Give a brand-new cookbook a few real starter recipes to explore, instead of
-      // opening on an empty page.
-      const starters = await insertRecipes(supabase, session.user.id, seedRecipes);
-      setRecipes(starters);
+      // A brand-new cookbook starts genuinely empty — recipes only appear once the
+      // person saves one themselves (chat, import, or cooking a friend's recipe).
+      setRecipes([]);
+      setRecipesLoading(false);
       setAuthStatus("ready");
     },
     [session, supabase, showToast]

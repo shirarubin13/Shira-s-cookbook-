@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI, Type } from "@google/genai";
+import { generateWithFallback } from "@/lib/gemini";
 
 // Vercel's default function timeout (10s) can be shorter than a structured Gemini
 // generation takes, especially on a cold start — extend it to the Hobby-tier max.
@@ -36,17 +37,10 @@ export async function POST(request: Request) {
 Suggest 2-3 short, concrete upgrade ideas in Hebrew that directly answer what they asked for — each one a specific ingredient, sauce, or technique to add to the recipe, not a full sentence or explanation.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: ideasSchema,
-      },
+    const text = await generateWithFallback(ai, prompt, {
+      responseMimeType: "application/json",
+      responseSchema: ideasSchema,
     });
-
-    const text = response.text;
-    if (!text) throw new Error("Empty response from model");
     const parsed = JSON.parse(text);
     return NextResponse.json({ ideas: parsed.ideas ?? [] });
   } catch (err) {
