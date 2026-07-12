@@ -59,12 +59,16 @@ export default function ChatPage() {
     setThinking(true);
     scrollDown();
 
-    const suggestions = (await askAi(text)) ?? fallbackSuggestions(text);
+    const aiSuggestions = await askAi(text);
+    // Never silently pass off the canned pool as an AI answer — when the AI is
+    // unavailable (daily quota, momentary overload), say so explicitly.
+    const suggestions = aiSuggestions ?? fallbackSuggestions(text);
     cacheAiSuggestions(suggestions);
     setThinking(false);
 
-    const intro =
-      suggestions.length > 1
+    const intro = !aiSuggestions
+      ? "הצ׳אט החכם לא זמין כרגע (עומס או מכסה יומית) — הנה כמה רעיונות מהמאגר הקבוע בינתיים, ואפשר לנסות שוב עוד כמה דקות:"
+      : suggestions.length > 1
         ? "כמה אפשרויות שיכולות להתאים:"
         : `מצאתי מתכון שמתאים: ${suggestions[0].title}.`;
     setEntries((e) => [...e, { kind: "bot", text: intro }, { kind: "suggestions", recipes: suggestions }]);
