@@ -92,18 +92,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "AI is not configured on the server." }, { status: 500 });
   }
 
-  const { message } = await request.json();
+  const { message, history } = await request.json();
   if (!message || typeof message !== "string") {
     return NextResponse.json({ error: "Missing message." }, { status: 400 });
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `You are a warm, practical home cooking assistant inside a Hebrew-language cooking app. A user just asked, in the app's chat: "${message}"
+  // Compact transcript of the conversation so far, so follow-ups like "something
+  // cooler" or "a different option" are understood in context.
+  const historyLines = Array.isArray(history)
+    ? (history as Array<{ role: string; text: string }>)
+        .filter((h) => h && typeof h.text === "string" && h.text.trim())
+        .slice(-12)
+        .map((h) => `${h.role === "user" ? "User" : "You"}: ${h.text}`)
+        .join("\n")
+    : "";
+
+  const historyBlock = historyLines
+    ? `This is an ongoing conversation. Earlier messages:
+${historyLines}
+
+`
+    : "";
+
+  const prompt = `You are a warm, practical home cooking assistant inside a Hebrew-language cooking app. ${historyBlock}The user's new message in the chat: "${message}"
 
 Reply with recipe suggestions in Hebrew (every text field — titles, steps, ingredients, everything — must be Hebrew).
 
 Rules:
+- If the new message is a follow-up on the conversation (e.g. asking for a different / fancier / simpler option, or refining an earlier request), keep the same topic from the conversation and suggest genuinely NEW options — never repeat a recipe you already suggested.
 - If the request names a specific, clear dish, return exactly 1 suggestion for it, and make sure every detail they mentioned (a specific sauce, ingredient, or style) is actually reflected in that recipe's ingredients and steps, not silently dropped.
 - If the request is a mood, a time limit, an occasion, or otherwise open-ended, return 2-3 varied, genuinely different suggestions that fit it.
 - Steps should be real, correctly ordered cooking instructions a home cook can follow, written step by step (not paragraphs).

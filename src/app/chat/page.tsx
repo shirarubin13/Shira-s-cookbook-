@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { Recipe, chatSuggestionPool, matchesQuery } from "@/lib/recipes";
@@ -12,17 +12,42 @@ type ChatEntry =
   | { kind: "bot"; text: string }
   | { kind: "suggestions"; recipes: Recipe[] };
 
+type ChatHistoryItem = { role: "user" | "assistant"; text: string };
+
+const GREETING_TEXT = "ספרי לי מה בא לך, מה יש לך בבית, או כמה זמן יש לך.";
+const GREETING: ChatEntry = { kind: "bot", text: GREETING_TEXT };
+
+// The conversation survives leaving the chat (e.g. to look at a suggested recipe)
+// for a few hours, so coming back shows the earlier options instead of starting over.
+const STORAGE_KEY = "cookbook-chat-v1";
+const CHAT_TTL_MS = 3 * 60 * 60 * 1000;
+
+function loadStoredChat(): { entries: ChatEntry[]; saved: string[] } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.entries) || Date.now() - parsed.at > CHAT_TTL_MS) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return { entries: parsed.entries, saved: Array.isArray(parsed.saved) ? parsed.saved : [] };
+  } catch {
+    return null;
+  }
+}
+
 function fallbackSuggestions(query: string): Recipe[] {
   const matches = chatSuggestionPool.filter((r) => matchesQuery(r, query));
   return (matches.length ? matches : chatSuggestionPool.slice(0, 2)).map((r) => ({ ...r }));
 }
 
-async function askAi(message: string): Promise<Recipe[] | null> {
+async function askAi(message: string, history: ChatHistoryItem[]): Promise<Recipe[] | null> {
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history }),
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -34,16 +59,52 @@ async function askAi(message: string): Promise<Recipe[] | null> {
   }
 }
 
+function toHistory(entries: ChatEntry[]): ChatHistoryItem[] {
+  return entries
+    .filter((e) => !(e.kind === "bot" && e.text === GREETING_TEXT))
+    .map((e): ChatHistoryItem => {
+      if (e.kind === "user") return { role: "user", text: e.text };
+      if (e.kind === "bot") return { role: "assistant", text: e.text };
+      return { role: "assistant", text: `הצעתי מתכונים: ${e.recipes.map((r) => r.title).join(", ")}` };
+    });
+}
+
 export default function ChatPage() {
   const router = useRouter();
   const { saveRecipe, showToast, cacheAiSuggestions } = useStore();
-  const [entries, setEntries] = useState<ChatEntry[]>([
-    { kind: "bot", text: "ספרי לי מה בא לך, מה יש לך בבית, או כמה זמן יש לך." },
-  ]);
+  const [entries, setEntries] = useState<ChatEntry[]>([GREETING]);
   const [draft, setDraft] = useState("");
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [thinking, setThinking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const restoredRef = useRef(false);
+
+  // Restore a recent conversation once on mount, and re-cache its suggested recipes
+  // so tapping one still opens it.
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const stored = loadStoredChat();
+    if (!stored) return;
+    setEntries(stored.entries);
+    setSaved(new Set(stored.saved));
+    const recipes = stored.entries.flatMap((e) => (e.kind === "suggestions" ? e.recipes : []));
+    if (recipes.length) cacheAiSuggestions(recipes);
+    scrollDown();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!restoredRef.current || entries.length <= 1) return;
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ at: Date.now(), entries, saved: Array.from(saved) })
+      );
+    } catch {
+      // storage full or blocked — the chat just won't be remembered, nothing to do
+    }
+  }, [entries, saved]);
 
   function scrollDown() {
     requestAnimationFrame(() => {
@@ -54,12 +115,13 @@ export default function ChatPage() {
   async function send() {
     const text = draft.trim();
     if (!text) return;
+    const history = toHistory(entries);
     setEntries((e) => [...e, { kind: "user", text }]);
     setDraft("");
     setThinking(true);
     scrollDown();
 
-    const aiSuggestions = await askAi(text);
+    const aiSuggestions = await askAi(text, history);
     // Never silently pass off the canned pool as an AI answer — when the AI is
     // unavailable (daily quota, momentary overload), say so explicitly.
     const suggestions = aiSuggestions ?? fallbackSuggestions(text);

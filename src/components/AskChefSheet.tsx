@@ -23,7 +23,7 @@ async function askChef(recipe: Recipe, question: string): Promise<string> {
     const data = await res.json();
     return data.answer ?? "לא הצלחתי למצוא תשובה טובה לזה כרגע — אפשר לנסח אחרת?";
   } catch {
-    return "הייתה בעיה בחיבור לשף כרגע — נסי שוב עוד רגע.";
+    return "השף החכם לא זמין כרגע (עומס או מכסה יומית) — נסי שוב עוד כמה דקות.";
   }
 }
 

@@ -28,6 +28,11 @@ export function UpgradeBox({ recipe }: { recipe: Recipe }) {
   const [ideas, setIdeas] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // When the AI is unavailable, the canned ideas are shown with an honest note
+  // instead of being passed off as a tailored answer.
+  const AI_DOWN_INTRO =
+    "השף החכם לא זמין כרגע (עומס או מכסה יומית) — הנה כמה רעיונות כלליים בינתיים, ואפשר לנסות שוב עוד כמה דקות:";
+
   async function send() {
     const text = draft.trim();
     if (!text) return;
@@ -37,7 +42,7 @@ export function UpgradeBox({ recipe }: { recipe: Recipe }) {
     setIntro(`חושבת על רעיונות ל"${text}"…`);
     const found = await askForUpgrades(recipe, text);
     setIdeas(found ?? nextUpgradeIdeas());
-    setIntro(`כמה רעיונות שיכולים להתאים ל"${text}":`);
+    setIntro(found ? `כמה רעיונות שיכולים להתאים ל"${text}":` : AI_DOWN_INTRO);
     setLoading(false);
   }
 
@@ -46,7 +51,7 @@ export function UpgradeBox({ recipe }: { recipe: Recipe }) {
     setLoading(true);
     const found = await askForUpgrades(recipe, lastRequest);
     setIdeas(found ?? nextUpgradeIdeas());
-    setIntro("בטח, עוד כמה אפשרויות:");
+    setIntro(found ? "בטח, עוד כמה אפשרויות:" : AI_DOWN_INTRO);
     setLoading(false);
   }
 
