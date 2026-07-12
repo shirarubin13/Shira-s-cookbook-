@@ -22,6 +22,7 @@ import { PaletteKey } from "./palette";
 import { Toast } from "@/components/Toast";
 import {
   fetchRecipes,
+  fetchRecipeById,
   insertRecipe,
   updateRecipe,
   deleteRecipeRow,
@@ -64,6 +65,7 @@ type StoreContextValue = {
   completeOnboarding: (name: string, palette: PaletteKey) => Promise<void>;
   isSaved: (id: string) => boolean;
   getRecipeById: (id: string) => Recipe | undefined;
+  ensureRecipeCached: (id: string) => Promise<Recipe | undefined>;
   saveRecipe: (recipe: Recipe, pending?: boolean) => Promise<Recipe | null>;
   deleteRecipe: (id: string) => Promise<void>;
   applyUpgrade: (id: string, idea: string) => Promise<Recipe | undefined>;
@@ -234,6 +236,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       );
     },
     [recipes, aiSuggestions]
+  );
+
+  // Recipes opened from a friend's shared book only live in the in-memory
+  // aiSuggestions cache, which doesn't survive a page reload. This re-fetches one
+  // directly by id (row-level security only allows it if it's the caller's own
+  // recipe, or its owner still has sharing on) and re-caches it so getRecipeById
+  // finds it afterwards.
+  const ensureRecipeCached = useCallback(
+    async (id: string): Promise<Recipe | undefined> => {
+      const existing = getRecipeById(id);
+      if (existing) return existing;
+      const fetched = await fetchRecipeById(supabase, id);
+      if (!fetched) return undefined;
+      setAiSuggestions((list) => [...list, fetched]);
+      return fetched;
+    },
+    [getRecipeById, supabase]
   );
 
   const saveRecipe = useCallback(
@@ -464,6 +483,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       completeOnboarding,
       isSaved,
       getRecipeById,
+      ensureRecipeCached,
       saveRecipe,
       deleteRecipe,
       applyUpgrade,
@@ -492,6 +512,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       completeOnboarding,
       isSaved,
       getRecipeById,
+      ensureRecipeCached,
       saveRecipe,
       deleteRecipe,
       applyUpgrade,

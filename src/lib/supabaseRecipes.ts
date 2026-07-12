@@ -59,6 +59,16 @@ export async function fetchRecipes(supabase: SupabaseClient, ownerId: string): P
   return (data as DbRecipeRow[]).map(fromDb);
 }
 
+/** Looks up a single recipe by id regardless of owner — succeeds only if row-level
+ * security allows it (it's the caller's own recipe, or its owner has sharing on).
+ * Used as a fallback when a recipe isn't in memory, e.g. a friend's recipe opened
+ * after the page was reloaded. */
+export async function fetchRecipeById(supabase: SupabaseClient, id: string): Promise<Recipe | null> {
+  const { data, error } = await supabase.from("recipes").select("*").eq("id", id).maybeSingle();
+  if (error || !data) return null;
+  return fromDb(data as DbRecipeRow);
+}
+
 /** Inserts a recipe and returns it with the real database-generated id. */
 export async function insertRecipe(
   supabase: SupabaseClient,

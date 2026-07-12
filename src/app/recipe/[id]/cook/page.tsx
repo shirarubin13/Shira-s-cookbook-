@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { Recipe } from "@/lib/recipes";
 import { Screen } from "@/components/Screen";
+import { Header } from "@/components/Header";
 import { ProgressGauge } from "@/components/ProgressGauge";
 import { PrimaryButton } from "@/components/Buttons";
 import { TimerRing } from "@/components/TimerRing";
@@ -19,11 +20,26 @@ export default function CookPage() {
 }
 
 function CookPageInner() {
+  const router = useRouter();
   const { id } = useParams<{ id: string }>();
-  const { getRecipeById } = useStore();
+  const { getRecipeById, ensureRecipeCached } = useStore();
   const recipe = getRecipeById(id);
+  const [checkedNotFound, setCheckedNotFound] = useState(false);
 
-  if (!recipe) return null;
+  useEffect(() => {
+    if (recipe) return;
+    ensureRecipeCached(id).finally(() => setCheckedNotFound(true));
+  }, [id, recipe, ensureRecipeCached]);
+
+  if (!recipe) {
+    if (!checkedNotFound) return null;
+    return (
+      <Screen>
+        <Header title="מתכון" onBack={() => router.push("/")} />
+        <p className="pt-6 text-sm font-bold text-muted">המתכון לא נמצא.</p>
+      </Screen>
+    );
+  }
   return <CookBody recipe={recipe} />;
 }
 

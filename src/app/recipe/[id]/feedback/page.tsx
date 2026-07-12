@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { Recipe } from "@/lib/recipes";
@@ -9,10 +9,26 @@ import { Header } from "@/components/Header";
 import { PrimaryButton } from "@/components/Buttons";
 
 export default function FeedbackPage() {
+  const router = useRouter();
   const { id } = useParams<{ id: string }>();
-  const { getRecipeById } = useStore();
+  const { getRecipeById, ensureRecipeCached } = useStore();
   const recipe = getRecipeById(id);
-  if (!recipe) return null;
+  const [checkedNotFound, setCheckedNotFound] = useState(false);
+
+  useEffect(() => {
+    if (recipe) return;
+    ensureRecipeCached(id).finally(() => setCheckedNotFound(true));
+  }, [id, recipe, ensureRecipeCached]);
+
+  if (!recipe) {
+    if (!checkedNotFound) return null;
+    return (
+      <Screen>
+        <Header title="מתכון" onBack={() => router.push("/")} />
+        <p className="pt-6 text-sm font-bold text-muted">המתכון לא נמצא.</p>
+      </Screen>
+    );
+  }
   return <FeedbackBody key={id} recipe={recipe} />;
 }
 

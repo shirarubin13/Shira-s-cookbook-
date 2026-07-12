@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { Ingredient, IngredientNote, Recipe } from "@/lib/recipes";
@@ -12,14 +12,22 @@ import { UpgradeBox } from "@/components/UpgradeBox";
 import { AskChefBubble } from "@/components/AskChefSheet";
 
 export default function IngredientsPage() {
+  const router = useRouter();
   const { id } = useParams<{ id: string }>();
-  const { getRecipeById } = useStore();
+  const { getRecipeById, ensureRecipeCached } = useStore();
   const recipe = getRecipeById(id);
+  const [checkedNotFound, setCheckedNotFound] = useState(false);
+
+  useEffect(() => {
+    if (recipe) return;
+    ensureRecipeCached(id).finally(() => setCheckedNotFound(true));
+  }, [id, recipe, ensureRecipeCached]);
 
   if (!recipe) {
+    if (!checkedNotFound) return null;
     return (
       <Screen>
-        <Header title="מתכון" />
+        <Header title="מתכון" onBack={() => router.push("/")} />
         <p className="pt-6 text-sm font-bold text-muted">המתכון לא נמצא.</p>
       </Screen>
     );
