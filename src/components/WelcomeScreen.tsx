@@ -18,6 +18,10 @@ export function WelcomeScreen() {
 }
 
 function friendlyAuthError(raw: string): string {
+  // Supabase's per-address cooldown: one link per minute per email, by design.
+  if (/security purposes|only request this after/i.test(raw)) {
+    return "כבר שלחנו לך קישור ממש עכשיו — כדאי לבדוק בתיבת המייל ובספאם. אפשר לבקש קישור חדש בעוד כדקה.";
+  }
   if (/rate limit/i.test(raw)) {
     return "נשלחו יותר מדי קישורים בזמן קצר — אפשר לנסות שוב בעוד כמה דקות.";
   }
