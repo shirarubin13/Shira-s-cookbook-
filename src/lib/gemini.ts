@@ -13,9 +13,11 @@ const MODEL_CHAIN = [
   "gemini-2.0-flash",
 ];
 
-function isQuotaError(err: unknown): boolean {
+// Errors where trying the next model in the chain can help: this model's free
+// daily quota is exhausted, or Google reports it momentarily overloaded.
+function isFallbackWorthyError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /RESOURCE_EXHAUSTED|quota|429/i.test(msg);
+  return /RESOURCE_EXHAUSTED|quota|429|UNAVAILABLE|overloaded|high demand|503/i.test(msg);
 }
 
 export async function generateWithFallback(
@@ -36,8 +38,8 @@ export async function generateWithFallback(
       return text;
     } catch (err) {
       lastError = err;
-      if (!isQuotaError(err)) throw err;
-      console.warn(`Quota exhausted on ${model}, trying next fallback model`);
+      if (!isFallbackWorthyError(err)) throw err;
+      console.warn(`${model} unavailable (quota/overload), trying next fallback model`);
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));

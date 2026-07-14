@@ -41,6 +41,64 @@ function findNote(item: Ingredient, notes: IngredientNote[] | undefined): Ingred
   return notes.find((n) => n.name === item.name || item.name.includes(n.name) || n.name.includes(item.name));
 }
 
+function ScaleBox({ recipeId }: { recipeId: string }) {
+  const { scaledRequestFor, applyScale, resetScale, showToast } = useStore();
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(false);
+  const activeRequest = scaledRequestFor(recipeId);
+
+  async function send() {
+    const text = draft.trim();
+    if (!text || loading) return;
+    setLoading(true);
+    const ok = await applyScale(recipeId, text);
+    setLoading(false);
+    if (ok) {
+      setDraft("");
+      showToast("הכמויות הותאמו.");
+    } else {
+      showToast("השף החכם לא זמין כרגע — נסי שוב עוד כמה דקות.");
+    }
+  }
+
+  return (
+    <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-border bg-surface p-3">
+      <div className="text-xs font-bold">מבשלת לכמות אחרת?</div>
+      {activeRequest && (
+        <div className="flex items-center justify-between gap-2 rounded-xl p-2.5" style={{ background: "var(--accent-soft)" }}>
+          <span className="text-xs font-bold" style={{ color: "var(--accent-deep)" }}>
+            הכמויות מותאמות ל: &quot;{activeRequest}&quot;
+          </span>
+          <button
+            onClick={() => resetScale(recipeId)}
+            className="flex-none text-xs font-bold underline"
+            style={{ color: "var(--accent-deep)" }}
+          >
+            חזרה למקור
+          </button>
+        </div>
+      )}
+      <div className="flex gap-2.5">
+        <button
+          onClick={send}
+          disabled={loading}
+          className="flex-none rounded-xl px-3.5 py-2 text-xs font-bold disabled:opacity-60"
+          style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
+        >
+          {loading ? "מתאימה…" : "התאמה"}
+        </button>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && send()}
+          placeholder="ל-2 אנשים / רק כוס אחת של אורז…"
+          className="min-w-0 flex-1 rounded-xl bg-surface-2 px-3 py-2 text-right text-xs"
+        />
+      </div>
+    </div>
+  );
+}
+
 function IngredientsBody({ recipe }: { recipe: Recipe }) {
   const router = useRouter();
   const [checks, setChecks] = useState<Record<string, boolean>>({});
@@ -69,6 +127,8 @@ function IngredientsBody({ recipe }: { recipe: Recipe }) {
           </p>
         </div>
       )}
+
+      <ScaleBox recipeId={recipe.id} />
 
       <Group
         title="כנראה יש לך בבית"

@@ -47,6 +47,38 @@ export type PendingUpgrade = {
   previousBuyItems: Ingredient[];
 };
 
+/** A per-cook, amounts-adjusted version of a recipe ("for 2 people", "just one cup
+ * of rice"). Shown and cooked instead of the original while active, but never
+ * written to the cookbook — the saved recipe always keeps its original amounts. */
+type ScaledEntry = { recipe: Recipe; request: string; at: number };
+
+const SCALED_KEY = "cookbook-scaled-v1";
+const SCALED_TTL_MS = 12 * 60 * 60 * 1000;
+
+function loadScaled(): Record<string, ScaledEntry> {
+  try {
+    const raw = localStorage.getItem(SCALED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, ScaledEntry>;
+    const now = Date.now();
+    const fresh: Record<string, ScaledEntry> = {};
+    for (const [id, entry] of Object.entries(parsed)) {
+      if (entry && entry.recipe && now - entry.at < SCALED_TTL_MS) fresh[id] = entry;
+    }
+    return fresh;
+  } catch {
+    return {};
+  }
+}
+
+function saveScaled(scaled: Record<string, ScaledEntry>) {
+  try {
+    localStorage.setItem(SCALED_KEY, JSON.stringify(scaled));
+  } catch {
+    // storage blocked — scaling still works for this visit, just won't survive leaving
+  }
+}
+
 type StoreContextValue = {
   authStatus: AuthStatus;
   userId: string | null;
@@ -67,6 +99,9 @@ type StoreContextValue = {
   isSaved: (id: string) => boolean;
   getRecipeById: (id: string) => Recipe | undefined;
   ensureRecipeCached: (id: string) => Promise<Recipe | undefined>;
+  scaledRequestFor: (id: string) => string | null;
+  applyScale: (id: string, request: string) => Promise<boolean>;
+  resetScale: (id: string) => void;
   saveRecipe: (recipe: Recipe, pending?: boolean) => Promise<Recipe | null>;
   deleteRecipe: (id: string) => Promise<void>;
   applyUpgrade: (id: string, idea: string) => Promise<Recipe | undefined>;
@@ -94,8 +129,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<string | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<Recipe[]>([]);
   const [pendingUpgrade, setPendingUpgrade] = useState<PendingUpgrade | null>(null);
+  const [scaled, setScaled] = useState<Record<string, ScaledEntry>>({});
   const upgradeOffset = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Scaled versions survive reloads (they matter most mid-cook, which is exactly
+  // when phones reload tabs) — loaded once, saved on every change after that.
+  // The save effect is defined before the load effect on purpose: on mount it runs
+  // first (ref still false) and skips, so the stored data is never clobbered by the
+  // initial empty state.
+  const scaledLoadedRef = useRef(false);
+  useEffect(() => {
+    if (scaledLoadedRef.current) saveScaled(scaled);
+  }, [scaled]);
+  useEffect(() => {
+    setScaled(loadScaled());
+    scaledLoadedRef.current = true;
+  }, []);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -228,7 +278,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setAiSuggestions((list) => [...list, ...newOnes]);
   }, []);
 
-  const getRecipeById = useCallback(
+  // The recipe as stored — without any per-cook amount scaling applied.
+  const getBaseRecipeById = useCallback(
     (id: string): Recipe | undefined => {
       return (
         recipes.find((r) => r.id === id) ??
@@ -237,6 +288,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       );
     },
     [recipes, aiSuggestions]
+  );
+
+  const getRecipeById = useCallback(
+    (id: string): Recipe | undefined => {
+      return scaled[id]?.recipe ?? getBaseRecipeById(id);
+    },
+    [scaled, getBaseRecipeById]
   );
 
   // Recipes opened from a friend's shared book or the chat only live in the
@@ -256,6 +314,53 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     },
     [getRecipeById, supabase]
   );
+
+  const scaledRequestFor = useCallback((id: string) => scaled[id]?.request ?? null, [scaled]);
+
+  // Asks the AI to adjust the recipe's amounts to the request ("2 אנשים", "רק כוס
+  // אורז"). The result replaces the recipe for this cooking session only — always
+  // computed from the original, so re-scaling never compounds.
+  const applyScale = useCallback(
+    async (id: string, request: string): Promise<boolean> => {
+      const base = getBaseRecipeById(id);
+      if (!base) return false;
+      try {
+        const res = await fetch("/api/rescale", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: base.title,
+            haveItems: base.haveItems,
+            buyItems: base.buyItems,
+            steps: base.steps,
+            request,
+          }),
+        });
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (!Array.isArray(data.buyItems) || !Array.isArray(data.steps)) return false;
+        const adjusted: Recipe = {
+          ...base,
+          haveItems: data.haveItems,
+          buyItems: data.buyItems,
+          steps: data.steps,
+        };
+        setScaled((map) => ({ ...map, [id]: { recipe: adjusted, request, at: Date.now() } }));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [getBaseRecipeById]
+  );
+
+  const resetScale = useCallback((id: string) => {
+    setScaled((map) => {
+      const next = { ...map };
+      delete next[id];
+      return next;
+    });
+  }, []);
 
   const saveRecipe = useCallback(
     async (recipe: Recipe, pending = false): Promise<Recipe | null> => {
@@ -307,7 +412,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         previousBuyItems: current.buyItems,
       });
 
-      if (recipes.some((r) => r.id === id)) {
+      // When a per-cook scale is active, the recipe being shown is the overlay — the
+      // upgrade edits that, never the underlying original lists.
+      if (scaled[id]) {
+        setScaled((map) => {
+          const entry = map[id];
+          return entry ? { ...map, [id]: { ...entry, recipe: updated } } : map;
+        });
+      } else if (recipes.some((r) => r.id === id)) {
         setRecipes((list) => list.map((r) => (r.id === id ? updated : r)));
       } else {
         setAiSuggestions((list) => list.map((r) => (r.id === id ? updated : r)));
@@ -315,7 +427,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       showToast("נוסף למתכון — בסוף הבישול נשאל אם לשמור את זה.");
       return updated;
     },
-    [recipes, showToast, getRecipeById]
+    [recipes, scaled, showToast, getRecipeById]
   );
 
   const confirmPendingUpgrade = useCallback(
@@ -333,7 +445,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           steps: pending.previousSteps,
           buyItems: pending.previousBuyItems,
         };
-        if (recipes.some((r) => r.id === pending.recipeId)) {
+        if (scaled[pending.recipeId]) {
+          setScaled((map) => {
+            const entry = map[pending.recipeId];
+            return entry ? { ...map, [pending.recipeId]: { ...entry, recipe: reverted } } : map;
+          });
+        } else if (recipes.some((r) => r.id === pending.recipeId)) {
           setRecipes((list) => list.map((r) => (r.id === pending.recipeId ? reverted : r)));
         } else {
           setAiSuggestions((list) => list.map((r) => (r.id === pending.recipeId ? reverted : r)));
@@ -344,9 +461,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // If the recipe is already saved, the upgrade needs an explicit write — otherwise
       // it's just part of whatever gets saved next (first save, or not saved at all).
       if (recipes.some((r) => r.id === pending.recipeId)) {
+        // The cookbook always keeps original amounts — if a per-cook scale is active,
+        // the upgrade is applied to the original for the write, not the scaled copy.
+        let writeBuyItems = current.buyItems;
+        let writeSteps = current.steps;
+        if (scaled[pending.recipeId]) {
+          const base = getBaseRecipeById(pending.recipeId);
+          if (base) {
+            const baseSteps = [...base.steps];
+            baseSteps.splice(Math.max(baseSteps.length - 1, 0), 0, {
+              text: `שדרוג שבחרת: להוסיף ${pending.idea}.`,
+            });
+            writeSteps = baseSteps;
+            writeBuyItems = [...base.buyItems, { name: pending.idea }];
+          }
+        }
         const updated = await updateRecipe(supabase, pending.recipeId, {
-          buyItems: current.buyItems,
-          steps: current.steps,
+          buyItems: writeBuyItems,
+          steps: writeSteps,
         });
         if (!updated) {
           showToast("לא הצלחנו לשמור את השדרוג.");
@@ -358,7 +490,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       return current;
     },
-    [pendingUpgrade, recipes, supabase, showToast, getRecipeById]
+    [pendingUpgrade, recipes, scaled, supabase, showToast, getRecipeById, getBaseRecipeById]
   );
 
   const nextUpgradeIdeas = useCallback(() => {
@@ -454,7 +586,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           showToast("נשמר בקביעות בספר שלך.");
         }
       } else if (save) {
-        const copy: Recipe = { ...recipe, note: trimmed ? shortNote : undefined, ingredientNotes, pending: false };
+        // The cookbook keeps original amounts — if this cook used a scaled version,
+        // the saved copy is still the recipe as originally written.
+        const original = getBaseRecipeById(recipe.id) ?? recipe;
+        const copy: Recipe = { ...original, note: trimmed ? shortNote : undefined, ingredientNotes, pending: false };
         const saved = await insertRecipe(supabase, session.user.id, copy);
         if (saved) setRecipes((list) => [...list, saved]);
         showToast("נוסף לספר המתכונים שלך.");
@@ -462,7 +597,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         showToast("לא נשמר הפעם.");
       }
     },
-    [session, supabase, recipes, showToast, deriveIngredientNotes]
+    [session, supabase, recipes, showToast, deriveIngredientNotes, getBaseRecipeById]
   );
 
   const value = useMemo<StoreContextValue>(
@@ -486,6 +621,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       isSaved,
       getRecipeById,
       ensureRecipeCached,
+      scaledRequestFor,
+      applyScale,
+      resetScale,
       saveRecipe,
       deleteRecipe,
       applyUpgrade,
@@ -515,6 +653,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       isSaved,
       getRecipeById,
       ensureRecipeCached,
+      scaledRequestFor,
+      applyScale,
+      resetScale,
       saveRecipe,
       deleteRecipe,
       applyUpgrade,
