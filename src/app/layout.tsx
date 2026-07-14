@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
+import { ResumeTracker } from "@/components/ResumeTracker";
 
 export const metadata: Metadata = {
   title: "My cookbook",
@@ -21,7 +22,10 @@ export default function RootLayout({
   return (
     <html lang="he" dir="rtl" className="h-full antialiased">
       <body className="min-h-full">
-        <StoreProvider>{children}</StoreProvider>
+        <StoreProvider>
+          <ResumeTracker />
+          {children}
+        </StoreProvider>
       </body>
     </html>
   );

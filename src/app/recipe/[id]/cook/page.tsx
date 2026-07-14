@@ -95,7 +95,13 @@ function CookBody({ recipe }: { recipe: Recipe }) {
           </div>
         )}
 
-        {step.timerSeconds && <TimerRing totalSeconds={step.timerSeconds} key={stepIndex} />}
+        {step.timerSeconds && (
+          <TimerRing
+            totalSeconds={step.timerSeconds}
+            timerId={`${recipe.id}-${stepIndex}`}
+            key={stepIndex}
+          />
+        )}
 
         <PrimaryButton
           onClick={() => {

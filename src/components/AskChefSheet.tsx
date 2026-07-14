@@ -1,10 +1,42 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Recipe } from "@/lib/recipes";
 import { GhostButton } from "./Buttons";
 
 type Msg = { isUser: boolean; text: string };
+
+// Questions asked about a recipe stick around for a few hours (per recipe), so the
+// answers stay visible through the whole cooking session — including after moving
+// between steps or the app being closed and reopened mid-cook.
+const CHEF_TTL_MS = 3 * 60 * 60 * 1000;
+
+function chefKey(recipeId: string) {
+  return `cookbook-chef-${recipeId}`;
+}
+
+function loadChefChat(recipeId: string): Msg[] | null {
+  try {
+    const raw = localStorage.getItem(chefKey(recipeId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.messages) || Date.now() - parsed.at > CHEF_TTL_MS) {
+      localStorage.removeItem(chefKey(recipeId));
+      return null;
+    }
+    return parsed.messages;
+  } catch {
+    return null;
+  }
+}
+
+function saveChefChat(recipeId: string, messages: Msg[]) {
+  try {
+    localStorage.setItem(chefKey(recipeId), JSON.stringify({ at: Date.now(), messages }));
+  } catch {
+    // storage blocked — the conversation just won't be remembered
+  }
+}
 
 async function askChef(recipe: Recipe, question: string): Promise<string> {
   try {
@@ -32,6 +64,19 @@ export function AskChefBubble({ recipe }: { recipe: Recipe }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
+  const restoredRef = useRef(false);
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const stored = loadChefChat(recipe.id);
+    if (stored) setMessages(stored);
+  }, [recipe.id]);
+
+  useEffect(() => {
+    if (!restoredRef.current || !messages.length) return;
+    saveChefChat(recipe.id, messages);
+  }, [messages, recipe.id]);
 
   async function send() {
     const text = draft.trim();

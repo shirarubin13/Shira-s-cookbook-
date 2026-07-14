@@ -19,6 +19,7 @@ import {
   chatSuggestionPool,
 } from "./recipes";
 import { PaletteKey } from "./palette";
+import { findStoredChatRecipe } from "./chatStorage";
 import { Toast } from "@/components/Toast";
 import {
   fetchRecipes,
@@ -238,16 +239,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [recipes, aiSuggestions]
   );
 
-  // Recipes opened from a friend's shared book only live in the in-memory
-  // aiSuggestions cache, which doesn't survive a page reload. This re-fetches one
-  // directly by id (row-level security only allows it if it's the caller's own
-  // recipe, or its owner still has sharing on) and re-caches it so getRecipeById
-  // finds it afterwards.
+  // Recipes opened from a friend's shared book or the chat only live in the
+  // in-memory aiSuggestions cache, which doesn't survive a page reload. This
+  // recovers one by id — from the database (row-level security only allows it if
+  // it's the caller's own recipe, or its owner still has sharing on), or from the
+  // locally-persisted chat conversation — and re-caches it so getRecipeById finds
+  // it afterwards.
   const ensureRecipeCached = useCallback(
     async (id: string): Promise<Recipe | undefined> => {
       const existing = getRecipeById(id);
       if (existing) return existing;
-      const fetched = await fetchRecipeById(supabase, id);
+      const fetched = (await fetchRecipeById(supabase, id)) ?? findStoredChatRecipe(id);
       if (!fetched) return undefined;
       setAiSuggestions((list) => [...list, fetched]);
       return fetched;

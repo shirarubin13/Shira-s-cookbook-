@@ -4,38 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { Recipe, chatSuggestionPool, matchesQuery } from "@/lib/recipes";
+import { ChatEntry, loadStoredChat, saveStoredChat } from "@/lib/chatStorage";
 import { Screen } from "@/components/Screen";
 import { Header } from "@/components/Header";
-
-type ChatEntry =
-  | { kind: "user"; text: string }
-  | { kind: "bot"; text: string }
-  | { kind: "suggestions"; recipes: Recipe[] };
 
 type ChatHistoryItem = { role: "user" | "assistant"; text: string };
 
 const GREETING_TEXT = "ספרי לי מה בא לך, מה יש לך בבית, או כמה זמן יש לך.";
 const GREETING: ChatEntry = { kind: "bot", text: GREETING_TEXT };
-
-// The conversation survives leaving the chat (e.g. to look at a suggested recipe)
-// for a few hours, so coming back shows the earlier options instead of starting over.
-const STORAGE_KEY = "cookbook-chat-v1";
-const CHAT_TTL_MS = 3 * 60 * 60 * 1000;
-
-function loadStoredChat(): { entries: ChatEntry[]; saved: string[] } | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.entries) || Date.now() - parsed.at > CHAT_TTL_MS) {
-      localStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
-    return { entries: parsed.entries, saved: Array.isArray(parsed.saved) ? parsed.saved : [] };
-  } catch {
-    return null;
-  }
-}
 
 function fallbackSuggestions(query: string): Recipe[] {
   const matches = chatSuggestionPool.filter((r) => matchesQuery(r, query));
@@ -96,14 +72,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!restoredRef.current || entries.length <= 1) return;
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ at: Date.now(), entries, saved: Array.from(saved) })
-      );
-    } catch {
-      // storage full or blocked — the chat just won't be remembered, nothing to do
-    }
+    saveStoredChat(entries, Array.from(saved));
   }, [entries, saved]);
 
   function scrollDown() {
