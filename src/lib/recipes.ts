@@ -34,6 +34,9 @@ export type Recipe = {
    * Shows up in the cookbook so it can be found and opened, but if the first time it's
    * actually cooked ends without confirming at Feedback, it's removed rather than kept. */
   pending?: boolean;
+  /** True when the owner shared this single recipe by link — anyone with the link
+   * can view it (without seeing the rest of the book). */
+  shared?: boolean;
 };
 
 export function matchesQuery(recipe: Recipe, query: string): boolean {

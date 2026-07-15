@@ -14,7 +14,8 @@ import { ShareSheet } from "./ShareSheet";
 const suggestions = ["ארוחת ערב ב-10 דקות", "משהו מתוק, יום קשה", "ארוחה גדולה", "קציצות"];
 
 export function CookbookHome() {
-  const { userName, userEmail, recipes, recipesLoading, deleteRecipe, signOut } = useStore();
+  const { userName, userEmail, recipes, recipesLoading, deleteRecipe, signOut, setRecipeShared, showToast } =
+    useStore();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [showImport, setShowImport] = useState(false);
@@ -22,6 +23,35 @@ export function CookbookHome() {
   const router = useRouter();
 
   const filtered = recipes.filter((r) => matchesQuery(r, query));
+
+  // Sharing one recipe by link: first tap turns sharing on and copies the link;
+  // when already shared, offers copying again or stopping the share.
+  async function shareRecipe(recipe: (typeof recipes)[number]) {
+    const link = `${window.location.origin}/recipe/${recipe.id}?from=${encodeURIComponent(userName)}`;
+    if (!recipe.shared) {
+      const ok = await setRecipeShared(recipe.id, true);
+      if (!ok) return;
+      try {
+        await navigator.clipboard.writeText(link);
+      } catch {
+        // clipboard blocked — sharing is still on; the link can be copied from the browser bar
+      }
+      showToast("הקישור הועתק — כל מי שיש לו אותו יוכל לצפות במתכון הזה.");
+      return;
+    }
+    const copyAgain = window.confirm(
+      `"${recipe.title}" כבר משותף בקישור.\n\nאישור — העתקת הקישור שוב\nביטול — הפסקת השיתוף`
+    );
+    if (copyAgain) {
+      try {
+        await navigator.clipboard.writeText(link);
+      } catch {}
+      showToast("הקישור הועתק.");
+    } else {
+      const ok = await setRecipeShared(recipe.id, false);
+      if (ok) showToast("השיתוף הופסק — הקישור כבר לא יעבוד.");
+    }
+  }
 
   return (
     <Screen>
@@ -106,6 +136,7 @@ export function CookbookHome() {
                   recipe={r}
                   onClick={() => router.push(`/recipe/${r.id}`)}
                   onDelete={() => deleteRecipe(r.id)}
+                  onShare={() => shareRecipe(r)}
                 />
               ))}
             </div>

@@ -101,10 +101,32 @@ function ScaleBox({ recipeId }: { recipeId: string }) {
 
 function IngredientsBody({ recipe }: { recipe: Recipe }) {
   const router = useRouter();
+  const { recipes, userId, addToMyBook, applyNoteRevision } = useStore();
   const [checks, setChecks] = useState<Record<string, boolean>>({});
+  const [revising, setRevising] = useState(false);
+  const [addState, setAddState] = useState<"idle" | "adding" | "added">("idle");
+
+  const inMyBook = recipes.some((r) => r.id === recipe.id);
 
   function isChecked(key: string, fallback: boolean) {
     return key in checks ? checks[key] : fallback;
+  }
+
+  async function reviseByNote() {
+    if (revising) return;
+    setRevising(true);
+    await applyNoteRevision(recipe.id);
+    setRevising(false);
+  }
+
+  async function addThisToMyBook() {
+    if (addState !== "idle") return;
+    setAddState("adding");
+    // A shared-recipe link carries the sharer's name (?from=...), so the copy can
+    // say whose book it came from.
+    const from = new URLSearchParams(window.location.search).get("from") ?? undefined;
+    const saved = await addToMyBook(recipe, from ?? undefined);
+    setAddState(saved ? "added" : "idle");
   }
 
   return (
@@ -118,14 +140,32 @@ function IngredientsBody({ recipe }: { recipe: Recipe }) {
       </div>
 
       {recipe.note && (
-        <div className="mb-4 rounded-2xl p-3.5" style={{ background: "var(--accent-soft)" }}>
-          <div className="pb-1 text-xs font-bold" style={{ color: "var(--accent-deep)" }}>
+        <div className="mb-4 flex flex-col gap-2 rounded-2xl p-3.5" style={{ background: "var(--accent-soft)" }}>
+          <div className="text-xs font-bold" style={{ color: "var(--accent-deep)" }}>
             הערה מהפעם הקודמת
           </div>
           <p className="text-sm font-bold">
-            בפעם שעברה כתבת &quot;{recipe.note}&quot; — אפשר לשדרג את המתכון בהתאם, או לשאול את השף.
+            בפעם שעברה כתבת &quot;{recipe.note}&quot; — אפשר לעדכן את המתכון בהתאם, או לשאול את השף.
           </p>
+          <button
+            onClick={reviseByNote}
+            disabled={revising}
+            className="self-start rounded-xl px-3.5 py-2 text-xs font-bold disabled:opacity-60"
+            style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
+          >
+            {revising ? "מעדכנת את המתכון…" : "עדכון המתכון לפי ההערה"}
+          </button>
         </div>
+      )}
+
+      {!inMyBook && userId && (
+        <button
+          onClick={addThisToMyBook}
+          disabled={addState !== "idle"}
+          className="mb-4 w-full rounded-2xl border border-border bg-surface py-3 text-sm font-bold disabled:opacity-70"
+        >
+          {addState === "added" ? "✓ נשמר בספר שלך" : addState === "adding" ? "שומרת…" : "+ הוספה לספר המתכונים שלי"}
+        </button>
       )}
 
       <ScaleBox recipeId={recipe.id} />

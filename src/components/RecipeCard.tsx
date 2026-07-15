@@ -4,10 +4,12 @@ export function RecipeCard({
   recipe,
   onClick,
   onDelete,
+  onShare,
 }: {
   recipe: Recipe;
   onClick: () => void;
   onDelete?: () => void;
+  onShare?: () => void;
 }) {
   return (
     <div className="flex items-start gap-1 rounded-2xl border border-border bg-surface p-3.5">
@@ -22,10 +24,27 @@ export function RecipeCard({
             <Tag>{recipe.steps.length} שלבים</Tag>
             <Tag>{recipe.source}</Tag>
             {recipe.pending && <Tag accent>טרם אושר</Tag>}
+            {recipe.shared && <Tag accent>משותף בקישור</Tag>}
             {recipe.note && <Tag accent>הערה: {recipe.note}</Tag>}
           </span>
         </span>
       </button>
+      {onShare && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onShare();
+          }}
+          aria-label="שיתוף מתכון"
+          className="flex-none rounded-full p-2"
+          style={{ color: recipe.shared ? "var(--accent-deep)" : "var(--muted)" }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M12 15V4M12 4L8 8M12 4L16 8" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M5 13V18C5 19.1 5.9 20 7 20H17C18.1 20 19 19.1 19 18V13" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
       {onDelete && (
         <button
           onClick={(e) => {

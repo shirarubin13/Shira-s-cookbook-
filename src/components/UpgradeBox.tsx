@@ -27,6 +27,15 @@ export function UpgradeBox({ recipe }: { recipe: Recipe }) {
   const [intro, setIntro] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  // Weaving the chosen idea into the recipe is an AI call now, not an instant append.
+  async function applyIdea(idea: string) {
+    if (applying) return;
+    setApplying(true);
+    await applyUpgrade(recipe.id, idea);
+    setApplying(false);
+  }
 
   // When the AI is unavailable, the canned ideas are shown with an honest note
   // instead of being passed off as a tailored answer.
@@ -79,18 +88,21 @@ export function UpgradeBox({ recipe }: { recipe: Recipe }) {
 
       {intro && (
         <>
-          <div className="rounded-xl bg-surface-2 p-2.5 text-right text-xs font-bold">{intro}</div>
+          <div className="rounded-xl bg-surface-2 p-2.5 text-right text-xs font-bold">
+            {applying ? "משלבת את השדרוג במתכון…" : intro}
+          </div>
           {!loading &&
+            !applying &&
             ideas.map((idea) => (
               <button
                 key={idea}
-                onClick={() => applyUpgrade(recipe.id, idea)}
+                onClick={() => applyIdea(idea)}
                 className="w-full rounded-xl bg-surface-2 px-3 py-2.5 text-right text-xs font-bold"
               >
                 {idea}
               </button>
             ))}
-          {!loading && (
+          {!loading && !applying && (
             <button onClick={more} className="self-end text-xs font-bold text-muted">
               רוצה רעיונות אחרים?
             </button>

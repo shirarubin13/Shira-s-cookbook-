@@ -45,7 +45,35 @@ export type PendingUpgrade = {
   idea: string;
   previousSteps: RecipeStep[];
   previousBuyItems: Ingredient[];
+  previousHaveItems: Ingredient[];
 };
+
+/** Calls the AI to genuinely rewrite a recipe per a change request (an upgrade idea
+ * or a saved note) — integrated into the right steps, not appended at the end. */
+async function fetchRevision(
+  recipe: Recipe,
+  instruction: string
+): Promise<{ haveItems: Ingredient[]; buyItems: Ingredient[]; steps: RecipeStep[] } | null> {
+  try {
+    const res = await fetch("/api/revise", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: recipe.title,
+        haveItems: recipe.haveItems,
+        buyItems: recipe.buyItems,
+        steps: recipe.steps,
+        instruction,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data.buyItems) || !Array.isArray(data.steps) || !data.steps.length) return null;
+    return { haveItems: data.haveItems ?? [], buyItems: data.buyItems, steps: data.steps };
+  } catch {
+    return null;
+  }
+}
 
 /** A per-cook, amounts-adjusted version of a recipe ("for 2 people", "just one cup
  * of rice"). Shown and cooked instead of the original while active, but never
@@ -108,6 +136,9 @@ type StoreContextValue = {
   nextUpgradeIdeas: () => string[];
   pendingUpgrade: PendingUpgrade | null;
   confirmPendingUpgrade: (keep: boolean) => Promise<Recipe | undefined>;
+  applyNoteRevision: (id: string) => Promise<boolean>;
+  setRecipeShared: (id: string, on: boolean) => Promise<boolean>;
+  addToMyBook: (recipe: Recipe, sourceName?: string) => Promise<Recipe | null>;
   importFromText: (text: string) => Promise<Recipe | null>;
   submitFeedback: (recipe: Recipe, note: string, save: boolean) => Promise<void>;
   showToast: (message: string) => void;
@@ -390,26 +421,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [supabase, showToast]
   );
 
-  // Applying an upgrade only changes the local, in-session copy of the recipe — it's
-  // not written to the database yet. It's confirmed (or dropped) via confirmPendingUpgrade,
-  // normally triggered by the "keep this upgrade?" toggle on the Feedback screen at the
-  // end of cooking, so an upgrade never silently becomes permanent.
+  // Applying an upgrade rewrites the recipe with the AI so the addition is woven
+  // into the right steps and ingredients — not appended as a note at the end. It
+  // only changes the local, in-session copy; it's confirmed (or dropped) via
+  // confirmPendingUpgrade on the Feedback screen, so an upgrade never silently
+  // becomes permanent.
   const applyUpgrade = useCallback(
     async (id: string, idea: string): Promise<Recipe | undefined> => {
       const current = getRecipeById(id);
       if (!current) return undefined;
 
-      const newSteps = [...current.steps];
-      const insertAt = Math.max(newSteps.length - 1, 0);
-      newSteps.splice(insertAt, 0, { text: `שדרוג שבחרת: להוסיף ${idea}.` });
-      const buyItems = [...current.buyItems, { name: idea }];
-      const updated: Recipe = { ...current, buyItems, steps: newSteps };
+      const revision = await fetchRevision(current, `לשלב במתכון: ${idea}`);
+      if (!revision) {
+        showToast("השף החכם לא זמין כרגע — נסי שוב עוד כמה דקות.");
+        return undefined;
+      }
+      const updated: Recipe = { ...current, ...revision };
 
       setPendingUpgrade({
         recipeId: id,
         idea,
         previousSteps: current.steps,
         previousBuyItems: current.buyItems,
+        previousHaveItems: current.haveItems,
       });
 
       // When a per-cook scale is active, the recipe being shown is the overlay — the
@@ -422,9 +456,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       } else if (recipes.some((r) => r.id === id)) {
         setRecipes((list) => list.map((r) => (r.id === id ? updated : r)));
       } else {
-        setAiSuggestions((list) => list.map((r) => (r.id === id ? updated : r)));
+        // Built-in pool recipes aren't in the cache until touched — insert, don't just map.
+        setAiSuggestions((list) =>
+          list.some((r) => r.id === id) ? list.map((r) => (r.id === id ? updated : r)) : [...list, updated]
+        );
       }
-      showToast("נוסף למתכון — בסוף הבישול נשאל אם לשמור את זה.");
+      showToast("שולב במתכון — בסוף הבישול נשאל אם לשמור את זה.");
       return updated;
     },
     [recipes, scaled, showToast, getRecipeById]
@@ -444,6 +481,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           ...current,
           steps: pending.previousSteps,
           buyItems: pending.previousBuyItems,
+          haveItems: pending.previousHaveItems,
         };
         if (scaled[pending.recipeId]) {
           setScaled((map) => {
@@ -453,7 +491,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         } else if (recipes.some((r) => r.id === pending.recipeId)) {
           setRecipes((list) => list.map((r) => (r.id === pending.recipeId ? reverted : r)));
         } else {
-          setAiSuggestions((list) => list.map((r) => (r.id === pending.recipeId ? reverted : r)));
+          setAiSuggestions((list) =>
+            list.some((r) => r.id === pending.recipeId)
+              ? list.map((r) => (r.id === pending.recipeId ? reverted : r))
+              : [...list, reverted]
+          );
         }
         return reverted;
       }
@@ -462,22 +504,33 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // it's just part of whatever gets saved next (first save, or not saved at all).
       if (recipes.some((r) => r.id === pending.recipeId)) {
         // The cookbook always keeps original amounts — if a per-cook scale is active,
-        // the upgrade is applied to the original for the write, not the scaled copy.
+        // the upgrade is re-integrated into the original for the write, not the
+        // scaled copy (with a plain appended step as last resort if the AI is down).
         let writeBuyItems = current.buyItems;
+        let writeHaveItems = current.haveItems;
         let writeSteps = current.steps;
         if (scaled[pending.recipeId]) {
           const base = getBaseRecipeById(pending.recipeId);
           if (base) {
-            const baseSteps = [...base.steps];
-            baseSteps.splice(Math.max(baseSteps.length - 1, 0), 0, {
-              text: `שדרוג שבחרת: להוסיף ${pending.idea}.`,
-            });
-            writeSteps = baseSteps;
-            writeBuyItems = [...base.buyItems, { name: pending.idea }];
+            const baseRevision = await fetchRevision(base, `לשלב במתכון: ${pending.idea}`);
+            if (baseRevision) {
+              writeSteps = baseRevision.steps;
+              writeBuyItems = baseRevision.buyItems;
+              writeHaveItems = baseRevision.haveItems;
+            } else {
+              const baseSteps = [...base.steps];
+              baseSteps.splice(Math.max(baseSteps.length - 1, 0), 0, {
+                text: `שדרוג שבחרת: להוסיף ${pending.idea}.`,
+              });
+              writeSteps = baseSteps;
+              writeBuyItems = [...base.buyItems, { name: pending.idea }];
+              writeHaveItems = base.haveItems;
+            }
           }
         }
         const updated = await updateRecipe(supabase, pending.recipeId, {
           buyItems: writeBuyItems,
+          haveItems: writeHaveItems,
           steps: writeSteps,
         });
         if (!updated) {
@@ -491,6 +544,88 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return current;
     },
     [pendingUpgrade, recipes, scaled, supabase, showToast, getRecipeById, getBaseRecipeById]
+  );
+
+  // "Update the recipe according to my note" — an explicit request to permanently
+  // apply a saved feedback note ("too salty", "add more garlic") to the recipe
+  // itself. Rewrites via the AI and saves; the note is cleared once applied.
+  const applyNoteRevision = useCallback(
+    async (id: string): Promise<boolean> => {
+      const base = getBaseRecipeById(id);
+      if (!base || !base.note) return false;
+
+      const revision = await fetchRevision(base, `לעדכן את המתכון לפי ההערה שלי מהפעם הקודמת: "${base.note}"`);
+      if (!revision) {
+        showToast("השף החכם לא זמין כרגע — נסי שוב עוד כמה דקות.");
+        return false;
+      }
+
+      if (recipes.some((r) => r.id === id)) {
+        const updated = await updateRecipe(supabase, id, {
+          ...revision,
+          note: null,
+          ingredientNotes: null,
+        });
+        if (!updated) {
+          showToast("לא הצלחנו לעדכן את המתכון.");
+          return false;
+        }
+        setRecipes((list) => list.map((r) => (r.id === id ? updated : r)));
+      } else {
+        const updated: Recipe = { ...base, ...revision, note: undefined, ingredientNotes: undefined };
+        setAiSuggestions((list) =>
+          list.some((r) => r.id === id) ? list.map((r) => (r.id === id ? updated : r)) : [...list, updated]
+        );
+      }
+      // A stale scaled copy would still show the old version — drop it.
+      resetScale(id);
+      showToast("המתכון עודכן לפי ההערה.");
+      return true;
+    },
+    [recipes, supabase, showToast, getBaseRecipeById, resetScale]
+  );
+
+  // Sharing one recipe by link, without exposing the rest of the book.
+  const setRecipeShared = useCallback(
+    async (id: string, on: boolean): Promise<boolean> => {
+      const updated = await updateRecipe(supabase, id, { shared: on });
+      if (!updated) {
+        showToast("לא הצלחנו לעדכן את השיתוף.");
+        return false;
+      }
+      setRecipes((list) => list.map((r) => (r.id === id ? updated : r)));
+      return true;
+    },
+    [supabase, showToast]
+  );
+
+  // Copies someone else's recipe (a friend's book, a shared link) straight into
+  // your own book — an explicit "add", saved permanently, with the source naming
+  // where it came from.
+  const addToMyBook = useCallback(
+    async (recipe: Recipe, sourceName?: string): Promise<Recipe | null> => {
+      if (!session) {
+        showToast("צריך להתחבר כדי לשמור לספר שלך.");
+        return null;
+      }
+      const copy: Recipe = {
+        ...recipe,
+        source: sourceName ? `מהספר של ${sourceName}` : recipe.source,
+        note: undefined,
+        ingredientNotes: undefined,
+        pending: false,
+        shared: false,
+      };
+      const saved = await insertRecipe(supabase, session.user.id, copy);
+      if (!saved) {
+        showToast("לא הצלחנו לשמור את המתכון.");
+        return null;
+      }
+      setRecipes((list) => [...list, saved]);
+      showToast("נוסף לספר המתכונים שלך.");
+      return saved;
+    },
+    [session, supabase, showToast]
   );
 
   const nextUpgradeIdeas = useCallback(() => {
@@ -630,6 +765,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       nextUpgradeIdeas,
       pendingUpgrade,
       confirmPendingUpgrade,
+      applyNoteRevision,
+      setRecipeShared,
+      addToMyBook,
       importFromText,
       submitFeedback,
       showToast,
@@ -662,6 +800,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       nextUpgradeIdeas,
       pendingUpgrade,
       confirmPendingUpgrade,
+      applyNoteRevision,
+      setRecipeShared,
+      addToMyBook,
       importFromText,
       submitFeedback,
       showToast,

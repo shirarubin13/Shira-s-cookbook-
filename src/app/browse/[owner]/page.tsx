@@ -13,10 +13,12 @@ type Status = "loading" | "not-shared" | "ready";
 export default function BrowseOwnerPage() {
   const { owner } = useParams<{ owner: string }>();
   const router = useRouter();
-  const { userId, cacheAiSuggestions } = useStore();
+  const { userId, cacheAiSuggestions, addToMyBook } = useStore();
   const [status, setStatus] = useState<Status>("loading");
   const [ownerName, setOwnerName] = useState("");
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const [addingId, setAddingId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +90,14 @@ export default function BrowseOwnerPage() {
     router.push(`/recipe/${recipe.id}`);
   }
 
+  async function addRecipe(recipe: Recipe) {
+    if (addingId || addedIds.has(recipe.id)) return;
+    setAddingId(recipe.id);
+    const saved = await addToMyBook(recipe, ownerName);
+    setAddingId(null);
+    if (saved) setAddedIds((s) => new Set(s).add(recipe.id));
+  }
+
   if (status === "loading") return null;
 
   if (status === "not-shared") {
@@ -113,19 +123,28 @@ export default function BrowseOwnerPage() {
       ) : (
         <div className="flex flex-col gap-2.5">
           {recipes.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => openRecipe(r)}
-              className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3.5 text-right"
-            >
-              <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-surface-2 text-xl">
-                {r.emoji}
-              </span>
-              <span className="flex min-w-0 flex-col gap-1">
-                <span className="font-bold">{r.title}</span>
-                <span className="text-xs font-bold text-muted">{r.blurb}</span>
-              </span>
-            </button>
+            <div key={r.id} className="flex items-center gap-2 rounded-2xl border border-border bg-surface p-3.5">
+              <button onClick={() => openRecipe(r)} className="flex min-w-0 flex-1 items-center gap-3 text-right">
+                <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-surface-2 text-xl">
+                  {r.emoji}
+                </span>
+                <span className="flex min-w-0 flex-col gap-1">
+                  <span className="font-bold">{r.title}</span>
+                  <span className="text-xs font-bold text-muted">{r.blurb}</span>
+                </span>
+              </button>
+              {userId && (
+                <button
+                  onClick={() => addRecipe(r)}
+                  disabled={addingId === r.id || addedIds.has(r.id)}
+                  aria-label="הוספה לספר שלי"
+                  className="flex-none rounded-full px-3 py-2 text-xs font-bold disabled:opacity-60"
+                  style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
+                >
+                  {addedIds.has(r.id) ? "✓ נשמר" : addingId === r.id ? "שומרת…" : "+ לספר שלי"}
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}

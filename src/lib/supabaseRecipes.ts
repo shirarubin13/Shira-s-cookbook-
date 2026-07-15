@@ -14,6 +14,7 @@ type DbRecipeRow = {
   note: string | null;
   ingredient_notes: IngredientNote[] | null;
   pending: boolean;
+  is_shared: boolean;
 };
 
 function fromDb(row: DbRecipeRow): Recipe {
@@ -30,6 +31,7 @@ function fromDb(row: DbRecipeRow): Recipe {
     note: row.note ?? undefined,
     ingredientNotes: row.ingredient_notes ?? undefined,
     pending: row.pending,
+    shared: row.is_shared,
   };
 }
 
@@ -46,6 +48,8 @@ function toDbFields(recipe: Recipe) {
     note: recipe.note ?? null,
     ingredient_notes: recipe.ingredientNotes ?? null,
     pending: recipe.pending ?? false,
+    // Sharing is a per-copy decision — a copy of someone's shared recipe starts unshared.
+    is_shared: false,
   };
 }
 
@@ -98,10 +102,17 @@ export async function insertRecipes(
   return (data as DbRecipeRow[]).map(fromDb);
 }
 
+/** Like Partial<Recipe>, but note/ingredientNotes accept an explicit null meaning
+ * "clear this field in the database" (undefined still means "leave unchanged"). */
+export type RecipePatch = Omit<Partial<Recipe>, "note" | "ingredientNotes"> & {
+  note?: string | null;
+  ingredientNotes?: IngredientNote[] | null;
+};
+
 export async function updateRecipe(
   supabase: SupabaseClient,
   id: string,
-  patch: Partial<Recipe>
+  patch: RecipePatch
 ): Promise<Recipe | null> {
   const fields: Record<string, unknown> = {};
   if (patch.buyItems !== undefined) fields.buy_items = patch.buyItems;
@@ -111,6 +122,7 @@ export async function updateRecipe(
   if (patch.ingredientNotes !== undefined) fields.ingredient_notes = patch.ingredientNotes ?? null;
   if (patch.pending !== undefined) fields.pending = patch.pending;
   if (patch.source !== undefined) fields.source = patch.source;
+  if (patch.shared !== undefined) fields.is_shared = patch.shared;
 
   const { data, error } = await supabase.from("recipes").update(fields).eq("id", id).select().single();
   if (error || !data) {
