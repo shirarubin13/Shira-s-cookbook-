@@ -25,7 +25,9 @@ export function RecipeCard({
             <Tag>{recipe.source}</Tag>
             {recipe.pending && <Tag accent>טרם אושר</Tag>}
             {recipe.shared && <Tag accent>משותף בקישור</Tag>}
-            {recipe.note && <Tag accent>הערה: {recipe.note}</Tag>}
+            {recipe.note && (
+              <Tag accent>הערה: {recipe.note.length > 24 ? recipe.note.slice(0, 24) + "…" : recipe.note}</Tag>
+            )}
           </span>
         </span>
       </button>

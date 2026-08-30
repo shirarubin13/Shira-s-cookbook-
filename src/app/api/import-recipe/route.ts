@@ -50,7 +50,11 @@ const recipeSchema = {
       items: {
         type: Type.OBJECT,
         properties: {
-          text: { type: Type.STRING, description: "One clear instruction, in Hebrew" },
+          text: {
+            type: Type.STRING,
+            description:
+              "One clear instruction, in Hebrew, restating the amount of every ingredient it uses (e.g. \"להוסיף 1.5 כוסות קמח\", not \"להוסיף את הקמח\")",
+          },
           timerSeconds: {
             type: Type.INTEGER,
             nullable: true,
@@ -88,7 +92,9 @@ export async function POST(request: Request) {
 ${text}
 """
 
-Turn it into one complete, structured recipe in Hebrew (every text field must be Hebrew, regardless of the language of the pasted text). Fill in any missing standard technique or quantity a reasonable home cook would need, but keep the dish itself faithful to what was actually described — don't invent a different dish.`;
+Turn it into one complete, structured recipe in Hebrew (every text field must be Hebrew, regardless of the language of the pasted text). Fill in any missing standard technique or quantity a reasonable home cook would need, but keep the dish itself faithful to what was actually described — don't invent a different dish.
+
+Each step must restate the amount of every ingredient it uses, matching the ingredient list exactly — "להוסיף 1.5 כוסות קמח", never "להוסיף את הקמח". The app shows one step at a time while cooking, so an amount that appears only in the ingredient list is one the cook can no longer see.`;
 
   try {
     const text2 = await generateWithFallback(ai, prompt, {

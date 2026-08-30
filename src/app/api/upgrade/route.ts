@@ -34,7 +34,9 @@ export async function POST(request: Request) {
 
   const prompt = `A home cook is looking at a recipe called "${title}" (${blurb ?? ""}) inside a Hebrew cooking app, and asked how to upgrade or change it: "${userRequest}"
 
-Suggest 2-3 short, concrete upgrade ideas in Hebrew that directly answer what they asked for — each one a specific ingredient, sauce, or technique to add to the recipe, not a full sentence or explanation.`;
+Suggest 2-3 short, concrete upgrade ideas in Hebrew that directly answer what they asked for — each one a specific ingredient, sauce, or technique to add to the recipe, not a full sentence or explanation.
+
+Important: the ideas are ALTERNATIVES the cook picks ONE of. So if the request contains several separate wishes (e.g. "a sauce and something crunchy"), every idea must cover all of the wishes together — never split the request into one idea per wish.`;
 
   try {
     const text = await generateWithFallback(ai, prompt, {

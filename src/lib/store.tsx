@@ -695,14 +695,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const submitFeedback = useCallback(
     async (recipe: Recipe, note: string, save: boolean) => {
       if (!session) return;
+      // The note is stored in full — truncating belongs to display only. Cutting it
+      // here used to silently drop everything after ~24 characters, so multi-part
+      // notes lost all but their first point before the AI ever saw them.
       const trimmed = note.trim();
-      const shortNote = trimmed.length > 24 ? trimmed.slice(0, 24) + "…" : trimmed;
       const existing = recipes.find((r) => r.id === recipe.id);
       const ingredientNotes = trimmed ? await deriveIngredientNotes(recipe, trimmed) : undefined;
 
       if (existing && !existing.pending) {
         if (trimmed) {
-          const updated = await updateRecipe(supabase, recipe.id, { note: shortNote, ingredientNotes });
+          const updated = await updateRecipe(supabase, recipe.id, { note: trimmed, ingredientNotes });
           if (updated) setRecipes((list) => list.map((r) => (r.id === recipe.id ? updated : r)));
         }
         showToast("נשמר.");
@@ -714,7 +716,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         } else {
           const updated = await updateRecipe(supabase, recipe.id, {
             pending: false,
-            note: trimmed ? shortNote : existing.note,
+            note: trimmed ? trimmed : existing.note,
             ingredientNotes: trimmed ? ingredientNotes : existing.ingredientNotes,
           });
           if (updated) setRecipes((list) => list.map((r) => (r.id === recipe.id ? updated : r)));
@@ -724,7 +726,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         // The cookbook keeps original amounts — if this cook used a scaled version,
         // the saved copy is still the recipe as originally written.
         const original = getBaseRecipeById(recipe.id) ?? recipe;
-        const copy: Recipe = { ...original, note: trimmed ? shortNote : undefined, ingredientNotes, pending: false };
+        const copy: Recipe = { ...original, note: trimmed || undefined, ingredientNotes, pending: false };
         const saved = await insertRecipe(supabase, session.user.id, copy);
         if (saved) setRecipes((list) => [...list, saved]);
         showToast("נוסף לספר המתכונים שלך.");

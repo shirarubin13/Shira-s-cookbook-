@@ -30,7 +30,11 @@ const reviseSchema = {
       items: {
         type: Type.OBJECT,
         properties: {
-          text: { type: Type.STRING, description: "One clear instruction, in Hebrew" },
+          text: {
+            type: Type.STRING,
+            description:
+              "One clear instruction, in Hebrew, restating the amount of every ingredient it uses (e.g. \"להוסיף 1.5 כוסות קמח\", not \"להוסיף את הקמח\")",
+          },
           timerSeconds: {
             type: Type.INTEGER,
             nullable: true,
@@ -84,10 +88,12 @@ Steps:
 ${stepsText}
 
 Rewrite the recipe with the change genuinely integrated — not appended as an afterthought:
-- Work the change into the exact steps where it belongs (e.g. a sauce gets prepared and added at the right moments, a swapped ingredient changes the relevant steps).
+- The request may contain SEVERAL separate changes (e.g. "less salt, more garlic, and add mushrooms") — apply every single one of them, not just the first. Before answering, mentally list each distinct change in the request and make sure each is reflected in the result.
+- Work each change into the exact steps where it belongs (e.g. a sauce gets prepared and added at the right moments, a swapped ingredient changes the relevant steps).
 - Add, remove, or adjust ingredients as the change requires; keep everything else as close to the original as possible.
 - Keep the dish recognizable — this is an adjustment of this recipe, not a new recipe.
 - Steps stay short, clear, one action each; keep original timers unless the change affects them.
+- Every step must restate the amount of each ingredient it uses, matching the ingredient list — "לערבב 1.5 כוסות קמח", never "לערבב את הקמח". Add the amount to steps that are missing it, and update it wherever the change alters it. The app shows one step at a time while cooking, so an amount only in the ingredient list is one the cook can no longer see.
 - Everything in Hebrew.`;
 
   try {

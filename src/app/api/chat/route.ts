@@ -62,7 +62,11 @@ const recipeSchema = {
             items: {
               type: Type.OBJECT,
               properties: {
-                text: { type: Type.STRING, description: "One clear instruction, in Hebrew" },
+                text: {
+                  type: Type.STRING,
+                  description:
+                    "One clear instruction, in Hebrew, that repeats the amount of every ingredient it uses (e.g. \"להוסיף 1.5 כוסות קמח ולערבב\", not \"להוסיף את הקמח\") — the cook is reading this step alone, with the ingredient list already behind them",
+                },
                 timerSeconds: {
                   type: Type.INTEGER,
                   nullable: true,
@@ -125,6 +129,7 @@ Rules:
 - If the request names a specific, clear dish, return exactly 1 suggestion for it, and make sure every detail they mentioned (a specific sauce, ingredient, or style) is actually reflected in that recipe's ingredients and steps, not silently dropped.
 - If the request is a mood, a time limit, an occasion, or otherwise open-ended, return 2-3 varied, genuinely different suggestions that fit it.
 - Steps should be real, correctly ordered cooking instructions a home cook can follow, written step by step (not paragraphs).
+- Every step must restate the amount of each ingredient it uses, matching the ingredient list exactly — "לשפוך 1.5 כוסות קמח", never "לשפוך את הקמח". The app shows one step at a time on screen while cooking, so an amount that appears only in the ingredient list is an amount the cook can no longer see.
 - Only add timerSeconds to a step when there's real unattended waiting time (simmering, baking, resting, boiling) — most steps should have no timer at all.
 - When a step does have a timer, its parallelTip should suggest something useful to do with that idle time, in the spirit of "meanwhile" — never suggest something that also needs the stove/oven that's already in use.
 - blurb should read like a short restaurant menu description that names what's actually distinctive about this version of the dish — never just repeat the title or use vague praise.

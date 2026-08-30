@@ -30,7 +30,11 @@ const rescaleSchema = {
       items: {
         type: Type.OBJECT,
         properties: {
-          text: { type: Type.STRING, description: "The step instruction in Hebrew, amounts adjusted where mentioned" },
+          text: {
+            type: Type.STRING,
+            description:
+              "The step instruction in Hebrew, restating each ingredient's new amount (e.g. \"להוסיף 1.5 כוסות קמח\") — adjusted where the step already named an amount, added where it didn't",
+          },
           timerSeconds: {
             type: Type.INTEGER,
             nullable: true,
@@ -82,7 +86,8 @@ Rewrite the ingredient quantities (and any amounts mentioned inside step texts) 
 Rules:
 - Keep every ingredient's name and the list order exactly as given; only quantities change. Never add or remove ingredients.
 - Scale sensibly, not blindly linearly — seasonings and oil scale less than main ingredients; round to amounts a home cook can actually measure.
-- Keep step texts identical except where an amount or count is mentioned; keep timers unless the new amount clearly changes cooking time.
+- Keep step texts identical except for the amounts: update every amount a step already names, and add the new amount to any step that uses an ingredient without naming one ("לערבב 1.5 כוסות קמח", not "לערבב את הקמח"). The app shows one step at a time while cooking, so the amounts have to live in the steps too, and they must match the adjusted ingredient list exactly.
+- Keep timers unless the new amount clearly changes cooking time.
 - Everything in Hebrew.`;
 
   try {
