@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { useStore } from "@/lib/store";
@@ -20,53 +20,70 @@ export default function BrowseOwnerPage() {
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [addingId, setAddingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  // Only the newest request is allowed to write to state, so a slow reload can't
+  // overwrite a fresher one that already came back.
+  const latestRequest = useRef(0);
+
+  const load = useCallback(async () => {
+    const requestId = ++latestRequest.current;
     const supabase = createClient();
 
-    async function load() {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("name, is_shared")
-        .eq("id", owner)
-        .maybeSingle();
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("name, is_shared")
+      .eq("id", owner)
+      .maybeSingle();
 
-      if (cancelled) return;
-      if (!profile || !profile.is_shared) {
-        setStatus("not-shared");
-        return;
-      }
-      setOwnerName(profile.name);
-
-      const { data: rows } = await supabase
-        .from("recipes")
-        .select("*")
-        .eq("owner_id", owner)
-        .eq("pending", false)
-        .order("created_at", { ascending: true });
-
-      if (cancelled) return;
-      setRecipes(
-        (rows ?? []).map((row) => ({
-          id: row.id,
-          title: row.title,
-          emoji: row.emoji,
-          blurb: row.blurb,
-          source: `מהספר של ${profile.name}`,
-          keywords: row.keywords,
-          haveItems: row.have_items,
-          buyItems: row.buy_items,
-          steps: row.steps,
-        }))
-      );
-      setStatus("ready");
+    if (requestId !== latestRequest.current) return;
+    if (!profile || !profile.is_shared) {
+      setStatus("not-shared");
+      return;
     }
+    setOwnerName(profile.name);
 
-    load();
-    return () => {
-      cancelled = true;
-    };
+    const { data: rows } = await supabase
+      .from("recipes")
+      .select("*")
+      .eq("owner_id", owner)
+      .eq("pending", false)
+      .order("created_at", { ascending: true });
+
+    if (requestId !== latestRequest.current) return;
+    setRecipes(
+      (rows ?? []).map((row) => ({
+        id: row.id,
+        title: row.title,
+        emoji: row.emoji,
+        blurb: row.blurb,
+        source: `מהספר של ${profile.name}`,
+        keywords: row.keywords,
+        haveItems: row.have_items,
+        buyItems: row.buy_items,
+        steps: row.steps,
+      }))
+    );
+    setStatus("ready");
   }, [owner]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // A friend's book is someone else's living data, and it's read on a phone: the
+  // usual way to miss a newly added recipe is to leave the app sitting open on this
+  // page while they add one. Re-reading whenever the app comes back to the front
+  // keeps the list current without a refresh button to remember.
+  useEffect(() => {
+    const refresh = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [load]);
 
   // Visiting a shared book while signed in saves it to "friends' books" — after that
   // it's always reachable from the browse page, no need to keep the link around.

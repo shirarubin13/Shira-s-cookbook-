@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { useStore } from "@/lib/store";
@@ -17,44 +17,57 @@ export default function BrowsePage() {
   const { userId } = useStore();
   const [books, setBooks] = useState<FriendBook[] | null>(null);
 
-  useEffect(() => {
+  // Only the newest request may write to state, so a slow reload can't overwrite
+  // a fresher one that already came back.
+  const latestRequest = useRef(0);
+
+  const load = useCallback(async () => {
     if (!userId) {
       setBooks([]);
       return;
     }
-    let cancelled = false;
+    const requestId = ++latestRequest.current;
     const supabase = createClient();
 
-    async function load() {
-      const { data: follows } = await supabase
-        .from("followed_cookbooks")
-        .select("owner_id")
-        .eq("follower_id", userId)
-        .order("created_at", { ascending: true });
+    const { data: follows } = await supabase
+      .from("followed_cookbooks")
+      .select("owner_id")
+      .eq("follower_id", userId)
+      .order("created_at", { ascending: true });
 
-      const ownerIds = (follows ?? []).map((f) => f.owner_id as string);
-      if (!ownerIds.length) {
-        if (!cancelled) setBooks([]);
-        return;
-      }
-
-      // Profiles are only readable while their owner keeps sharing on, so a book
-      // whose owner stopped sharing simply comes back without a name.
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, name")
-        .in("id", ownerIds);
-
-      if (cancelled) return;
-      const nameById = new Map((profiles ?? []).map((p) => [p.id as string, p.name as string]));
-      setBooks(ownerIds.map((id) => ({ ownerId: id, name: nameById.get(id) ?? null })));
+    const ownerIds = (follows ?? []).map((f) => f.owner_id as string);
+    if (requestId !== latestRequest.current) return;
+    if (!ownerIds.length) {
+      setBooks([]);
+      return;
     }
 
-    load();
-    return () => {
-      cancelled = true;
-    };
+    // Profiles are only readable while their owner keeps sharing on, so a book
+    // whose owner stopped sharing simply comes back without a name.
+    const { data: profiles } = await supabase.from("profiles").select("id, name").in("id", ownerIds);
+
+    if (requestId !== latestRequest.current) return;
+    const nameById = new Map((profiles ?? []).map((p) => [p.id as string, p.name as string]));
+    setBooks(ownerIds.map((id) => ({ ownerId: id, name: nameById.get(id) ?? null })));
   }, [userId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Re-read when the app comes back to the front, so a friend turning sharing on or
+  // off shows up without having to leave the screen and come back.
+  useEffect(() => {
+    const refresh = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [load]);
 
   async function removeBook(ownerId: string) {
     if (!userId) return;
