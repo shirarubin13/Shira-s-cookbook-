@@ -125,6 +125,9 @@ type StoreContextValue = {
   signOut: () => Promise<void>;
   completeOnboarding: (name: string, palette: PaletteKey) => Promise<void>;
   isSaved: (id: string) => boolean;
+  /** The copy of this recipe already in the cookbook, if any — see the note on
+   * savedIds: a saved recipe does not keep the id it had on screen. */
+  bookCopyOf: (id: string) => Recipe | undefined;
   getRecipeById: (id: string) => Recipe | undefined;
   ensureRecipeCached: (id: string) => Promise<Recipe | undefined>;
   scaledRequestFor: (id: string) => string | null;
@@ -301,7 +304,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // --- Recipes (real database now — every write below goes to Supabase) ---------
 
-  const isSaved = useCallback((id: string) => recipes.some((r) => r.id === id && !r.pending), [recipes]);
+  // Saving assigns the row a fresh database id, so the id the app is holding for a
+  // chat suggestion or a friend's recipe is NOT the id its saved copy ended up with.
+  // This remembers that pairing. Without it the app couldn't tell that the recipe on
+  // screen was already in the book, and cooking a recipe that had been saved earlier
+  // looked like a brand-new one — which is how the same recipe got saved twice.
+  const [savedIds, setSavedIds] = useState<Record<string, string>>({});
+
+  const rememberSavedId = useCallback((originalId: string, savedId: string) => {
+    if (originalId !== savedId) setSavedIds((map) => ({ ...map, [originalId]: savedId }));
+  }, []);
+
+  /** The copy of this recipe that lives in the cookbook, under whichever id it was
+   * saved with. The single place that answers "is this already in my book?". */
+  const bookCopyOf = useCallback(
+    (id: string): Recipe | undefined => {
+      const direct = recipes.find((r) => r.id === id);
+      if (direct) return direct;
+      const savedId = savedIds[id];
+      return savedId ? recipes.find((r) => r.id === savedId) : undefined;
+    },
+    [recipes, savedIds]
+  );
+
+  const isSaved = useCallback(
+    (id: string) => {
+      const copy = bookCopyOf(id);
+      return !!copy && !copy.pending;
+    },
+    [bookCopyOf]
+  );
 
   // Recipes the chat just generated this session but haven't been saved anywhere yet —
   // checked so "start cooking now" can open them before any save decision is made.
@@ -313,12 +345,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const getBaseRecipeById = useCallback(
     (id: string): Recipe | undefined => {
       return (
-        recipes.find((r) => r.id === id) ??
+        bookCopyOf(id) ??
         aiSuggestions.find((r) => r.id === id) ??
         chatSuggestionPool.find((r) => r.id === id)
       );
     },
-    [recipes, aiSuggestions]
+    [bookCopyOf, aiSuggestions]
   );
 
   const getRecipeById = useCallback(
@@ -396,16 +428,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const saveRecipe = useCallback(
     async (recipe: Recipe, pending = false): Promise<Recipe | null> => {
       if (!session) return null;
-      if (recipes.some((r) => r.id === recipe.id)) return recipes.find((r) => r.id === recipe.id) ?? null;
+      const already = bookCopyOf(recipe.id);
+      if (already) return already;
       const saved = await insertRecipe(supabase, session.user.id, { ...recipe, pending });
       if (!saved) {
         showToast("לא הצלחנו לשמור את המתכון.");
         return null;
       }
       setRecipes((list) => [...list, saved]);
+      rememberSavedId(recipe.id, saved.id);
       return saved;
     },
-    [session, supabase, recipes, showToast]
+    [session, supabase, bookCopyOf, rememberSavedId, showToast]
   );
 
   const deleteRecipe = useCallback(
@@ -502,7 +536,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       // If the recipe is already saved, the upgrade needs an explicit write — otherwise
       // it's just part of whatever gets saved next (first save, or not saved at all).
-      if (recipes.some((r) => r.id === pending.recipeId)) {
+      const bookCopy = bookCopyOf(pending.recipeId);
+      if (bookCopy) {
         // The cookbook always keeps original amounts — if a per-cook scale is active,
         // the upgrade is re-integrated into the original for the write, not the
         // scaled copy (with a plain appended step as last resort if the AI is down).
@@ -528,7 +563,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
-        const updated = await updateRecipe(supabase, pending.recipeId, {
+        const updated = await updateRecipe(supabase, bookCopy.id, {
           buyItems: writeBuyItems,
           haveItems: writeHaveItems,
           steps: writeSteps,
@@ -537,13 +572,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           showToast("לא הצלחנו לשמור את השדרוג.");
           return current;
         }
-        setRecipes((list) => list.map((r) => (r.id === pending.recipeId ? updated : r)));
+        setRecipes((list) => list.map((r) => (r.id === bookCopy.id ? updated : r)));
         return updated;
       }
 
       return current;
     },
-    [pendingUpgrade, recipes, scaled, supabase, showToast, getRecipeById, getBaseRecipeById]
+    [pendingUpgrade, recipes, scaled, supabase, showToast, getRecipeById, getBaseRecipeById, bookCopyOf]
   );
 
   // "Update the recipe according to my note" — an explicit request to permanently
@@ -622,10 +657,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
       setRecipes((list) => [...list, saved]);
+      rememberSavedId(recipe.id, saved.id);
       showToast("נוסף לספר המתכונים שלך.");
       return saved;
     },
-    [session, supabase, showToast]
+    [session, supabase, rememberSavedId, showToast]
   );
 
   const nextUpgradeIdeas = useCallback(() => {
@@ -699,27 +735,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // here used to silently drop everything after ~24 characters, so multi-part
       // notes lost all but their first point before the AI ever saw them.
       const trimmed = note.trim();
-      const existing = recipes.find((r) => r.id === recipe.id);
+      // Looked up through bookCopyOf, not by the id on screen: a recipe saved earlier
+      // from the chat lives under a different id, and missing it here meant finishing
+      // the cook saved a second copy of a recipe already in the book. Every write below
+      // targets the saved row's own id for the same reason.
+      const existing = bookCopyOf(recipe.id);
       const ingredientNotes = trimmed ? await deriveIngredientNotes(recipe, trimmed) : undefined;
 
       if (existing && !existing.pending) {
         if (trimmed) {
-          const updated = await updateRecipe(supabase, recipe.id, { note: trimmed, ingredientNotes });
-          if (updated) setRecipes((list) => list.map((r) => (r.id === recipe.id ? updated : r)));
+          const updated = await updateRecipe(supabase, existing.id, { note: trimmed, ingredientNotes });
+          if (updated) setRecipes((list) => list.map((r) => (r.id === existing.id ? updated : r)));
         }
         showToast("נשמר.");
       } else if (existing && existing.pending) {
         if (!save) {
-          await deleteRecipeRow(supabase, recipe.id);
-          setRecipes((list) => list.filter((r) => r.id !== recipe.id));
+          await deleteRecipeRow(supabase, existing.id);
+          setRecipes((list) => list.filter((r) => r.id !== existing.id));
           showToast("לא נשמר — הוסר מהספר.");
         } else {
-          const updated = await updateRecipe(supabase, recipe.id, {
+          const updated = await updateRecipe(supabase, existing.id, {
             pending: false,
             note: trimmed ? trimmed : existing.note,
             ingredientNotes: trimmed ? ingredientNotes : existing.ingredientNotes,
           });
-          if (updated) setRecipes((list) => list.map((r) => (r.id === recipe.id ? updated : r)));
+          if (updated) setRecipes((list) => list.map((r) => (r.id === existing.id ? updated : r)));
           showToast("נשמר בקביעות בספר שלך.");
         }
       } else if (save) {
@@ -728,13 +768,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const original = getBaseRecipeById(recipe.id) ?? recipe;
         const copy: Recipe = { ...original, note: trimmed || undefined, ingredientNotes, pending: false };
         const saved = await insertRecipe(supabase, session.user.id, copy);
-        if (saved) setRecipes((list) => [...list, saved]);
+        if (saved) {
+          setRecipes((list) => [...list, saved]);
+          rememberSavedId(recipe.id, saved.id);
+        }
         showToast("נוסף לספר המתכונים שלך.");
       } else {
         showToast("לא נשמר הפעם.");
       }
     },
-    [session, supabase, recipes, showToast, deriveIngredientNotes, getBaseRecipeById]
+    [session, supabase, bookCopyOf, rememberSavedId, showToast, deriveIngredientNotes, getBaseRecipeById]
   );
 
   const value = useMemo<StoreContextValue>(
@@ -756,6 +799,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       signOut,
       completeOnboarding,
       isSaved,
+      bookCopyOf,
       getRecipeById,
       ensureRecipeCached,
       scaledRequestFor,
@@ -791,6 +835,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       signOut,
       completeOnboarding,
       isSaved,
+      bookCopyOf,
       getRecipeById,
       ensureRecipeCached,
       scaledRequestFor,

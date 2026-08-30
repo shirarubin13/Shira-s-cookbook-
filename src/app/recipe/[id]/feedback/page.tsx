@@ -42,6 +42,9 @@ function FeedbackBody({ recipe }: { recipe: Recipe }) {
   const [notes, setNotes] = useState("");
   const [saveToggle, setSaveToggle] = useState(true);
   const [keepUpgradeToggle, setKeepUpgradeToggle] = useState(true);
+  // Saving is a database round trip, and the button sits under a thumb that may be
+  // wet or impatient — without this, a second tap saved the recipe a second time.
+  const [submitting, setSubmitting] = useState(false);
 
   return (
     <Screen>
@@ -110,13 +113,16 @@ function FeedbackBody({ recipe }: { recipe: Recipe }) {
       )}
 
       <PrimaryButton
+        disabled={submitting}
         onClick={async () => {
+          if (submitting) return;
+          setSubmitting(true);
           const finalRecipe = upgrade ? ((await confirmPendingUpgrade(keepUpgradeToggle)) ?? recipe) : recipe;
           await submitFeedback(finalRecipe, notes, saveToggle);
           router.push("/");
         }}
       >
-        סיימתי
+        {submitting ? "שומרת…" : "סיימתי"}
       </PrimaryButton>
     </Screen>
   );

@@ -101,12 +101,12 @@ function ScaleBox({ recipeId }: { recipeId: string }) {
 
 function IngredientsBody({ recipe }: { recipe: Recipe }) {
   const router = useRouter();
-  const { recipes, userId, addToMyBook, applyNoteRevision } = useStore();
+  const { userId, addToMyBook, applyNoteRevision, bookCopyOf } = useStore();
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [revising, setRevising] = useState(false);
   const [addState, setAddState] = useState<"idle" | "adding" | "added">("idle");
 
-  const inMyBook = recipes.some((r) => r.id === recipe.id);
+  const inMyBook = !!bookCopyOf(recipe.id);
 
   function isChecked(key: string, fallback: boolean) {
     return key in checks ? checks[key] : fallback;
