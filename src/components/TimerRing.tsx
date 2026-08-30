@@ -183,7 +183,7 @@ function TimerAlertHint({
         className="rounded-xl px-3.5 py-2 text-xs font-bold"
         style={{ background: "var(--accent-soft)", color: "var(--accent-deep)" }}
       >
-        🔔 לקבל התראה גם כשלא באפליקציה
+        🔔 לקבל התראה כשהזמן נגמר
       </button>
     );
   }
