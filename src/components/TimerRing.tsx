@@ -1,48 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { loadTimer, saveTimer } from "@/lib/timerStorage";
+import {
+  AlertPermission,
+  notificationPermission,
+  primeAlerts,
+  requestNotificationPermission,
+} from "@/lib/timerAlerts";
 
 const R = 52;
 const C = 2 * Math.PI * R;
-
-// A running timer is anchored to the clock (its end time), not to a ticking
-// counter — so navigating between steps, leaving the app, or reloading the page
-// doesn't stop or reset it: coming back shows the real remaining time, like a
-// kitchen timer would.
-const TIMER_TTL_MS = 12 * 60 * 60 * 1000;
-
-type StoredTimer =
-  | { status: "running"; endsAt: number; at: number }
-  | { status: "paused"; remaining: number; at: number }
-  | { status: "done"; at: number };
-
-function storageKey(id: string) {
-  return `cookbook-timer-${id}`;
-}
-
-function loadTimer(id: string): StoredTimer | null {
-  try {
-    const raw = localStorage.getItem(storageKey(id));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredTimer;
-    if (!parsed || Date.now() - parsed.at > TIMER_TTL_MS) {
-      localStorage.removeItem(storageKey(id));
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function saveTimer(id: string, timer: StoredTimer | null) {
-  try {
-    if (timer) localStorage.setItem(storageKey(id), JSON.stringify(timer));
-    else localStorage.removeItem(storageKey(id));
-  } catch {
-    // storage blocked — timer still works for this visit, just won't survive leaving
-  }
-}
 
 function fmt(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -56,23 +24,35 @@ type TimerState =
   | { status: "paused"; remaining: number }
   | { status: "done" };
 
-export function TimerRing({ totalSeconds, timerId }: { totalSeconds: number; timerId: string }) {
+export function TimerRing({
+  totalSeconds,
+  timerId,
+  label,
+  href,
+}: {
+  totalSeconds: number;
+  timerId: string;
+  /** Recipe name, so an alarm firing on another screen can say what finished. */
+  label?: string;
+  /** The step to return to when the alarm's notification is tapped. */
+  href?: string;
+}) {
   const [state, setState] = useState<TimerState>({ status: "idle" });
   // Ticks once a second purely to re-render — remaining time is always computed
   // from the clock, so missed ticks (background tab) can't drift the timer.
   const [, setTick] = useState(0);
+  const [permission, setPermission] = useState<AlertPermission>("unsupported");
+
+  useEffect(() => {
+    setPermission(notificationPermission());
+  }, []);
 
   useEffect(() => {
     const stored = loadTimer(timerId);
     if (!stored) {
       setState({ status: "idle" });
     } else if (stored.status === "running") {
-      if (stored.endsAt <= Date.now()) {
-        setState({ status: "done" });
-        saveTimer(timerId, { status: "done", at: Date.now() });
-      } else {
-        setState({ status: "running", endsAt: stored.endsAt });
-      }
+      setState(stored.endsAt <= Date.now() ? { status: "done" } : { status: "running", endsAt: stored.endsAt });
     } else if (stored.status === "paused") {
       setState({ status: "paused", remaining: stored.remaining });
     } else {
@@ -83,12 +63,11 @@ export function TimerRing({ totalSeconds, timerId }: { totalSeconds: number; tim
   useEffect(() => {
     if (state.status !== "running") return;
     const interval = setInterval(() => {
-      if (state.endsAt <= Date.now()) {
-        setState({ status: "done" });
-        saveTimer(timerId, { status: "done", at: Date.now() });
-      } else {
-        setTick((t) => t + 1);
-      }
+      // Reaching zero is only reflected locally here. Writing the finished record —
+      // and sounding the alarm — belongs to the app-wide TimerAlarm watcher, which
+      // keeps working even when this screen isn't the one being looked at.
+      if (state.endsAt <= Date.now()) setState({ status: "done" });
+      else setTick((t) => t + 1);
     }, 1000);
     return () => clearInterval(interval);
   }, [state, timerId]);
@@ -106,20 +85,23 @@ export function TimerRing({ totalSeconds, timerId }: { totalSeconds: number; tim
     if (state.status === "running") {
       const left = Math.max(0, Math.ceil((state.endsAt - Date.now()) / 1000));
       setState({ status: "paused", remaining: left });
-      saveTimer(timerId, { status: "paused", remaining: left, at: Date.now() });
+      saveTimer(timerId, { status: "paused", remaining: left, at: Date.now(), label, href });
     } else if (state.status === "idle" || state.status === "paused") {
       const seconds = state.status === "paused" ? state.remaining : totalSeconds;
       if (seconds <= 0) return;
+      // Starting is the tap that buys us sound and notifications later: browsers only
+      // unlock audio and grant notification permission from a real gesture.
+      void primeAlerts().then(() => setPermission(notificationPermission()));
       const endsAt = Date.now() + seconds * 1000;
       setState({ status: "running", endsAt });
-      saveTimer(timerId, { status: "running", endsAt, at: Date.now() });
+      saveTimer(timerId, { status: "running", endsAt, at: Date.now(), label, href });
     }
   }
 
   const fraction = totalSeconds > 0 ? remaining / totalSeconds : 0;
   const offset = C * (1 - fraction);
 
-  const label =
+  const buttonLabel =
     state.status === "idle"
       ? "התחלה"
       : state.status === "done"
@@ -147,20 +129,62 @@ export function TimerRing({ totalSeconds, timerId }: { totalSeconds: number; tim
             style={{ transition: "stroke-dashoffset 1s linear" }}
           />
         </svg>
-        <div
-          className="absolute inset-0 flex items-center justify-center font-mono text-2xl font-bold"
-          dir="ltr"
-        >
+        <div className="absolute inset-0 flex items-center justify-center font-mono text-2xl font-bold" dir="ltr">
           {fmt(remaining)}
         </div>
       </div>
+
       <button
         onClick={onPress}
         className="rounded-full px-7 py-2.5 font-bold active:scale-95"
         style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
       >
-        {label}
+        {buttonLabel}
       </button>
+
+      <TimerAlertHint
+        permission={permission}
+        onEnable={async () => {
+          await requestNotificationPermission();
+          setPermission(notificationPermission());
+        }}
+      />
     </div>
+  );
+}
+
+/** Says plainly what will and won't happen when the time is up, rather than letting
+ * the cook assume an alarm that the phone may not be allowed to sound. */
+function TimerAlertHint({
+  permission,
+  onEnable,
+}: {
+  permission: AlertPermission;
+  onEnable: () => void;
+}) {
+  if (permission === "granted") {
+    return (
+      <p className="max-w-[15rem] text-center text-[11px] font-bold leading-snug text-muted">
+        יישמע צלצול והתראה כשהזמן ייגמר. אם הטלפון סוגר את האפליקציה, הצלצול יישמע כשחוזרים אליה.
+      </p>
+    );
+  }
+
+  if (permission === "default") {
+    return (
+      <button
+        onClick={onEnable}
+        className="rounded-xl px-3.5 py-2 text-xs font-bold"
+        style={{ background: "var(--accent-soft)", color: "var(--accent-deep)" }}
+      >
+        🔔 לקבל התראה גם כשלא באפליקציה
+      </button>
+    );
+  }
+
+  return (
+    <p className="max-w-[15rem] text-center text-[11px] font-bold leading-snug text-muted">
+      התראות חסומות בהגדרות הדפדפן — הצלצול יישמע כשהאפליקציה פתוחה, או ברגע שחוזרים אליה.
+    </p>
   );
 }

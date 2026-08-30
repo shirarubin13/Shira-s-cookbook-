@@ -99,6 +99,8 @@ function CookBody({ recipe }: { recipe: Recipe }) {
           <TimerRing
             totalSeconds={step.timerSeconds}
             timerId={`${recipe.id}-${stepIndex}`}
+            label={recipe.title}
+            href={`/recipe/${recipe.id}/cook?step=${stepIndex}`}
             key={stepIndex}
           />
         )}
