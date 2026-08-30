@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ALERT_GRACE_MS, allTimers, saveTimer } from "@/lib/timerStorage";
 import { showTimerNotification, startAlarm, stopAlarm } from "@/lib/timerAlerts";
@@ -24,6 +24,11 @@ function agoText(endedAt: number): string | null {
 export function TimerAlarm() {
   const router = useRouter();
   const [fired, setFired] = useState<FiredTimer | null>(null);
+  // Read inside the sweep below, which must not close over a stale `fired`.
+  const firedRef = useRef<FiredTimer | null>(null);
+  useEffect(() => {
+    firedRef.current = fired;
+  }, [fired]);
 
   // Registered here because timer notifications are the only thing the worker does.
   useEffect(() => {
@@ -56,6 +61,10 @@ export function TimerAlarm() {
         // Finished while the app was closed, and never announced — do it now.
         saveTimer(id, { ...timer, alerted: true });
         setFired({ id, label: timer.label, href: timer.href, endedAt: timer.endedAt });
+      } else if (timer.status !== "done" && firedRef.current?.id === id) {
+        // Counting again — the cook restarted it from the step. Its alarm is spent.
+        stopAlarm();
+        setFired(null);
       }
     }
   }, []);

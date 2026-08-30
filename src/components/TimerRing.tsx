@@ -7,6 +7,7 @@ import {
   notificationPermission,
   primeAlerts,
   requestNotificationPermission,
+  stopAlarm,
 } from "@/lib/timerAlerts";
 
 const R = 52;
@@ -86,9 +87,14 @@ export function TimerRing({
       const left = Math.max(0, Math.ceil((state.endsAt - Date.now()) / 1000));
       setState({ status: "paused", remaining: left });
       saveTimer(timerId, { status: "paused", remaining: left, at: Date.now(), label, href });
-    } else if (state.status === "idle" || state.status === "paused") {
+    } else {
+      // Covers idle, paused and done. A finished timer restarts from the top, which
+      // is what a kitchen timer does and what the step usually needs — another few
+      // minutes for something that wasn't quite ready.
       const seconds = state.status === "paused" ? state.remaining : totalSeconds;
       if (seconds <= 0) return;
+      // Restarting while the alarm is still sounding should silence it.
+      stopAlarm();
       // Starting is the tap that buys us sound and notifications later: browsers only
       // unlock audio and grant notification permission from a real gesture.
       void primeAlerts().then(() => setPermission(notificationPermission()));
@@ -105,7 +111,7 @@ export function TimerRing({
     state.status === "idle"
       ? "התחלה"
       : state.status === "done"
-        ? "הסתיים"
+        ? "הפעלה מחדש"
         : state.status === "running"
           ? "השהיה"
           : "המשך";
@@ -165,7 +171,7 @@ function TimerAlertHint({
   if (permission === "granted") {
     return (
       <p className="max-w-[15rem] text-center text-[11px] font-bold leading-snug text-muted">
-        יישמע צלצול והתראה כשהזמן ייגמר. אם הטלפון סוגר את האפליקציה, הצלצול יישמע כשחוזרים אליה.
+        הצלצול יישמע כשהאפליקציה פתוחה. אם הטלפון סוגר אותה ברקע — הוא יישמע ברגע שחוזרים אליה.
       </p>
     );
   }
